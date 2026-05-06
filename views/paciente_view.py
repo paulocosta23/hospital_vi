@@ -5,19 +5,20 @@ from controllers.paciente_controller import salvar as salvar_paciente, listar as
 
 class PacienteView:
     def __init__(self, root):
-        self.frame = ttk.Frame(root)
-        self.frame.pack(fill="both", expand=True)
-
-        self.nome = tk.Entry(self.frame)
+       
+        main = tk.Frame(root, bg=C["bg_panel"])
+        main.pack(fill="both", expand=True, padx=16, pady=16)
+        
+        self.nome = tk.Entry(main)
         self.nome.pack()
 
-        self.cpf = tk.Entry(self.frame)
+        self.cpf = tk.Entry(main)
         self.cpf.pack()
 
-        tk.Button(self.frame, text="Salvar", command=self.salvar).pack()
-        tk.Button(self.frame, text="Excluir", command=self.excluir).pack()
+        tk.Button(main, text="Salvar", command=self.salvar).pack()
+        tk.Button(main, text="Excluir", command=self.excluir).pack()
 
-        self.tree = ttk.Treeview(self.frame, columns=("ID","Nome","CPF"), show="headings")
+        self.tree = ttk.Treeview(main, columns=("ID","Nome","CPF"), show="headings")
         for col in ("ID","Nome","CPF"):
             self.tree.heading(col, text=col)
         self.tree.pack(fill="both", expand=True)
