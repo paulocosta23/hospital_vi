@@ -66,7 +66,7 @@ class LoginView:
         form = tk.Frame(dir_, bg=C["bg_deep"])
         form.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=340)
 
-        tk.Label(form, text="Bem-vindo de volta",
+        tk.Label(form, text="Bem-vindo",
                  font=("Georgia", 22, "bold"),
                  bg=C["bg_deep"], fg=C["text_hi"]).pack(anchor="w")
 
