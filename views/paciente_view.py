@@ -1,3 +1,4 @@
+from logging import root
 import tkinter as tk
 from tkinter import ttk, messagebox
 from controllers.paciente_controller import (
@@ -90,11 +91,34 @@ class PacienteView:
 
     # -----------------------
     # FUNÇÕES
-    # -----------------------
+    # ----------------------
+
+
+    def limpar_campos(self):
+        self.nome.delete(0, tk.END)
+        self.cpf.delete(0, tk.END)
 
     def salvar(self):
+
         dados = (self.nome.get(), None, None, self.cpf.get(), None, None)
+
+        if not dados[0] or not dados[3]:
+            messagebox.showerror("ERRO", "Preencha todos os campos corretamente.")
+            return
+
+        resultado = salvar_paciente(dados)
+       
+        if resultado == "CPF já cadastrado":
+            messagebox.showerror("erro", resultado)
+            return
+        elif resultado == "CPF inválido":
+            messagebox.showerror("ERRO", "CPF inválido, revise os dados e tente novamente.")
+            return
+        elif resultado == "Paciente salvo com sucesso.":
+            messagebox.showinfo("Sucesso", resultado)
+
         salvar_paciente(dados)
+        self.limpar_campos()
         self.listar()
 
     def listar(self):
@@ -126,7 +150,13 @@ class PacienteView:
     def sair(self):
         for widget in self.root.winfo_children():
             widget.destroy()
+        
 
         from views.login_view import LoginView
+        LoginView(self.root) 
 
-        LoginView(self.root)
+        
+
+
+
+        

@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from controllers.consulta_controller import salvar as salvar_consulta, listar as listar_consulta
 from views.cores import C
+from datetime import datetime
 
 
 class ConsultaView:
@@ -121,8 +122,10 @@ class ConsultaView:
 
     # ===== LÓGICA (SEM ALTERAR) =====
     def salvar(self):
+        data = self.data.get()
+        data_formatada = datetime.strptime(data, "%d/%m/%Y").strftime("%Y-%m-%d")
         salvar_consulta(
-            self.data.get(),
+            data_formatada,
             self.tipo.get(),
             self.paciente.get(),
             self.medico.get()

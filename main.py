@@ -11,4 +11,4 @@ def iniciar():
     root.mainloop()
 
 if __name__ == "__main__":
-    iniciar()
+    iniciar()   

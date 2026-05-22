@@ -1,5 +1,16 @@
 from config.db import conectar
 
+def cpf_existe(cpf):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM paciente where cpf = %s", (cpf,))
+    resultado = cursor.fetchone()[0]
+    
+    cursor.close()
+    conn.close()
+    return resultado > 0
+
+
 def inserir(dados):
     conn = conectar()
     cursor = conn.cursor()

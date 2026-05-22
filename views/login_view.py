@@ -7,7 +7,7 @@ from controllers.usuario_controller import login
 from views.dashboard import Dashboard
 from views.cores import C
 
-class LoginView:
+class LoginView():
     def __init__(self, root):
         self.root = root
         
