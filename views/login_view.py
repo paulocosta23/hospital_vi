@@ -1,204 +1,125 @@
-import tkinter as tk
-from tkinter import messagebox
-from controllers.usuario_controller import login
-from views.dashboard import Dashboard
-from tkinter import messagebox
-from controllers.usuario_controller import login
-from views.dashboard import Dashboard
-from views.cores import C
-
-class LoginView():
-    def __init__(self, root):
-        self.root = root
-        
-
-       # self._mostrar_senha = False
-    # Criando com self.
-        
-
-        self.root.title("Login")
-        self.root.geometry("1100x680")
-        self.root.configure(bg=C["bg_deep"])
-
-        #self._build()
-
-        
-
-    # ─────────────────────────────────────────────
-    # UI PRINCIPAL
-    # ─────────────────────────────────────────────
-    #def _build(self):
-        self.raiz = tk.Frame(self.root, bg=C["bg_deep"])
-        self.raiz.pack(fill=tk.BOTH, expand=True)
+import customtkinter as ctk
 
 
-        # ESQUERDA
-        esq = tk.Frame(self.raiz, bg=C["bg_panel"])
-        esq.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+class LoginView(ctk.CTkFrame):
+    def __init__(self, master, on_login):
+        super().__init__(master)
+        self.pack(fill="both", expand=True)
 
-        centro = tk.Frame(esq, bg=C["bg_panel"])
-        centro.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        self.on_login = on_login
+        self.show_password = False
 
-        tk.Label(centro, text="Sistema de Gestão",
-                 font=("Georgia", 28, "bold"),
-                 bg=C["bg_panel"], fg=C["text_hi"]).pack()
+        # ===== FUNDO =====
+        self.configure(fg_color=("white", "#1F2937")
+)
 
-        tk.Label(centro, text="Hospital VIP",
-                 font=("Georgia", 28, "bold"),
-                 bg=C["bg_panel"], fg=C["accent"]).pack()
+        # ===== CONTAINER =====
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True)
 
-        tk.Frame(centro, bg=C["accent"], height=2, width=160).pack(pady=20)
+        # ========= ESQUERDA =========
+        left = ctk.CTkFrame(container, fg_color="transparent")
+        left.pack(side="left", fill="both", expand=True)
 
-        tk.Label(
-            centro,
-            text=" ",
-            font=("Helvetica", 12),
-            bg=C["bg_panel"],
-            fg=C["text_mid"],
-            justify=tk.CENTER
-        ).pack(pady=(0, 24))
+        left_inner = ctk.CTkFrame(left, fg_color="transparent")
+        left_inner.place(relx=0.5, rely=0.5, anchor="center")
 
-        # DIREITA
-        dir_ = tk.Frame(self.raiz, bg=C["bg_deep"], width=440)
-        dir_.pack(side=tk.RIGHT, fill=tk.BOTH)
-        dir_.pack_propagate(False)
+        ctk.CTkLabel(
+            left_inner,
+            text="✚",
+            font=ctk.CTkFont(size=60, weight="bold"),
+            text_color="#2563EB"
+        ).pack(pady=(0, 12))
 
-        form = tk.Frame(dir_, bg=C["bg_deep"])
-        form.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=340)
+        ctk.CTkLabel(
+            left_inner,
+            text="Clínica Médica",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color="#111827"
+        ).pack()
 
-        tk.Label(form, text="Bem-vindo",
-                 font=("Georgia", 22, "bold"),
-                 bg=C["bg_deep"], fg=C["text_hi"]).pack(anchor="w")
+        ctk.CTkLabel(
+            left_inner,
+            text="Sistema de gestão do consultório",
+            font=ctk.CTkFont(size=14),
+            text_color="#6B7280"
+        ).pack(pady=(8, 0))
 
-        tk.Label(form, text="Entre com suas credenciais.",
-                 font=("Helvetica", 11),
-                 bg=C["bg_deep"], fg=C["text_mid"]).pack(anchor="w", pady=(4, 24))
-
-        # ── USUÁRIO ──
-        tk.Label(form, text="USUÁRIO",
-                 font=("Helvetica", 9, "bold"),
-                 bg=C["bg_deep"], fg=C["text_mid"]).pack(anchor="w")
-
-        self.usuario = tk.Entry(
-            form,
-            bg=C["bg_card"],
-            fg=C["text_hi"],
-            insertbackground=C["accent"],
-            relief=tk.FLAT
+        # ========= LINHA DIVISÓRIA =========
+        divider = ctk.CTkFrame(
+            container,
+            width=2,              # linha visível
+            fg_color="#E5E7EB"
         )
-        self.usuario.pack(fill=tk.X, pady=(4, 10), ipady=6)
+        divider.pack(side="left", fill="y")
 
-        # ── SENHA ──
-        tk.Label(form, text="SENHA",
-                 font=("Helvetica", 9, "bold"),
-                 bg=C["bg_deep"], fg=C["text_mid"]).pack(anchor="w")
+        # ========= DIREITA =========
+        right = ctk.CTkFrame(container, fg_color="transparent")
+        right.pack(side="right", fill="both", expand=True)
 
-        senha_frame = tk.Frame(
-            form,
-            bg=C["bg_card"],
-            highlightthickness=1,
-            highlightbackground=C["border"]
+        right_inner = ctk.CTkFrame(right, fg_color="transparent")
+        right_inner.place(relx=0.5, rely=0.5, anchor="center")
+
+        ctk.CTkLabel(
+            right_inner,
+            text="Acessar sistema",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color="#111827"
+        ).pack(pady=(0, 30))
+
+        self.entry_user = ctk.CTkEntry(
+            right_inner,
+            placeholder_text="Usuário",
+            width=320,
+            height=48,
+            fg_color="white",
+            border_color="#E5E7EB",
+            corner_radius=12
         )
-        senha_frame.pack(fill=tk.X, pady=(4, 10))
+        self.entry_user.pack(pady=12)
 
-        self.senha = tk.Entry(
-            senha_frame,
-            bg=C["bg_card"],
-            fg=C["text_hi"],
-            insertbackground=C["accent"],
-            relief=tk.FLAT,
-            show="*"
+        password_frame = ctk.CTkFrame(
+            right_inner,
+            fg_color="white",
+            corner_radius=12,
+            height=48
         )
-        self.senha.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, ipady=6)
+        password_frame.pack(pady=12, fill="x")
+        password_frame.pack_propagate(False)
 
-        btn_toggle = tk.Button(
-            senha_frame,
-            text="◎",
-            font=("Helvetica", 12),
-            bg=C["bg_card"],
-            fg=C["text_lo"],  # mais suave
-            activebackground=C["bg_card"],
-            activeforeground=C["accent"],
-            relief=tk.FLAT,
-            bd=0,
-            cursor="hand2",
-            command=self._toggle_senha
-            )
-        btn_toggle.pack(side=tk.RIGHT, padx=6)
-
-    # Hover bem sutil
-        btn_toggle.bind("<Enter>", lambda e: btn_toggle.config(fg=C["text_mid"]))
-        btn_toggle.bind("<Leave>", lambda e: btn_toggle.config(fg=C["text_lo"]))
-                    # BOTÃO (igual seu original estilizado)
-        btn = tk.Button(
-            form,
-            text="Entrar  →",
-            font=("Helvetica", 12, "bold"),
-            bg=C["accent_dim"],
-            fg=C["white"],
-            activebackground=C["accent_dim"],  # evita “flash bruto”
-            activeforeground=C["white"],
-            relief=tk.FLAT,
-            bd=0,
-            cursor="hand2",
-            command=self.fazer_login
-            )
-        btn.pack(fill=tk.X, pady=20, ipady=10)
-
-        # Hover suave (igual seu sistema original)
-        btn.bind("<Enter>", lambda e: btn.config(bg=C["accent"]))
-        btn.bind("<Leave>", lambda e: btn.config(bg=C["accent_dim"]))
-
-        self.status = tk.Label(
-            form,
-            text="",
-            bg=C["bg_deep"],
-            fg=C["danger"]
+        self.entry_password = ctk.CTkEntry(
+            password_frame,
+            placeholder_text="Senha",
+            show="●",
+            fg_color="transparent",
+            border_width=0
         )
-        self.status.pack()
+        self.entry_password.pack(side="left", padx=12, expand=True, fill="both")
 
-    def _toggle_senha(self):
-    # Verifica se a senha está oculta (usando *) ou visível ("")
-        if self.senha.cget('show') == '*':
-            self.senha.config(show='')
-            # Opcional: mudar o texto do botão para "Ocultar"
-        else:
-            self.senha.config(show='*')
-            # Opcional: mudar o texto do botão para "Mostrar"
+        self.eye = ctk.CTkLabel(
+            password_frame,
+            text="👁",
+            text_color="#6B7280",
+            cursor="hand2"
+        )
+        self.eye.pack(side="right", padx=12)
+        self.eye.bind("<Button-1>", self.toggle_password)
 
+        ctk.CTkButton(
+            right_inner,
+            text="Entrar",
+            width=320,
+            height=48,
+            fg_color="#2563EB",
+            hover_color="#1E3A8A",
+            corner_radius=12,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            command=self.login
+        ).pack(pady=28)
 
-    def fazer_login(self):
-        try:
-            username = self.usuario.get().strip()
-            senha = self.senha.get().strip()
-            
-            # Campos vazios
-            if not username or not senha:
-                messagebox.showwarning("Atenção", "Preencha usuário e senha")
-                return
-            
-            usuario = login(username, senha)
-            # Usuário não existe
-            if usuario == "usuario_nao_existe":
-                messagebox.showerror("Erro", "Usuário não encontrado")
-                self.usuario.focus()
+    def toggle_password(self, event=None):
+        self.show_password = not self.show_password
+        self.entry_password.configure(show="" if self.show_password else "●")
 
-            # Senha incorreta 
-            elif usuario == "Senha_incorreta":
-                messagebox.showerror("Erro", "Senha incorreta")
-                self.senha.delete(0, tk.END0)
-                self.senha.focus()
-
-            # Login correto
-            elif usuario:
-                self.raiz.destroy()
-                Dashboard(self.root, usuario[1])
-
-            # fallback (segurança extra)
-            else:
-                messagebox.showerror("Erro", "Erro inesperado do login")
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            messagebox.showerror("Erro", "Erro interno do sistema")
+    def login(self):
+        self.on_login()
