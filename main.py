@@ -11,12 +11,17 @@ class App(ctk.CTk):
 
         self.geometry("1000x600")
         self.title("Clínica Médica")
-
+        self.resizable (True , True)
+        self.minsize(1530, 850)
+        
+        self.after(0, lambda: self.state('zoomed')) #minimizar após a janela esta pronta
         self.current_view = None
         self.dashboard = None
         self.usuario_logado = None
 
         self.show_login()
+
+
 
     # ---------- controle de telas ----------
     def clear_view(self):
