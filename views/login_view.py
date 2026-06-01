@@ -44,6 +44,7 @@ class LoginView(ctk.CTkFrame):
         content = ctk.CTkFrame(left_inner, fg_color="transparent")
         content.pack(padx=40, pady=40)
 
+
 # "Glow" atrás do ícone (forma decorativa)
         glow = ctk.CTkLabel(
             content,
@@ -56,8 +57,8 @@ class LoginView(ctk.CTkFrame):
 # Ícone principal
         ctk.CTkLabel(
             content,
-            text="✚",
-            font=ctk.CTkFont(size=130, weight="bold"),
+            text="⚕️",
+            font=ctk.CTkFont(size=240, weight="bold"),
             text_color="#22D3EE"
         ).pack(pady=(10, 20))
 
@@ -105,9 +106,17 @@ class LoginView(ctk.CTkFrame):
                     right_inner,
                     text="Acessar sistema",
             font=ctk.CTkFont(size=35, weight="bold"),
-                    text_color="#000000"
-                ).pack(pady=(0, 30))
-
+                    text_color="#FFFBFB"
+                ).pack(pady=(5, 100))
+        # Subtítulo
+        ctk.CTkLabel(
+            content,
+            text="Sistema inteligente para gestão\nrápida e eficiente",
+            font=ctk.CTkFont(size=14),
+            text_color="#BAE6FD",
+            justify="center",
+            wraplength=280
+            ).pack()
         self.entry_user = ctk.CTkEntry(
                     right_inner,
                     placeholder_text="Usuário",
