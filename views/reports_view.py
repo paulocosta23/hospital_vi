@@ -1,4 +1,7 @@
 import customtkinter as ctk
+from tkinter import filedialog, messagebox
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 
 class ReportsView(ctk.CTkFrame):
@@ -6,8 +9,7 @@ class ReportsView(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
-        self.configure(fg_color=("white", "#1F2937")
-)
+        self.configure(fg_color=("white", "#1F2937"))
 
         # DADOS
         self.consultas = [
@@ -33,6 +35,15 @@ class ReportsView(ctk.CTkFrame):
             text_color="#111827"
         )
         titulo.pack(anchor="w", padx=30, pady=15)
+
+        btn_pdf = ctk.CTkButton(
+            self,
+            text="Exportar PDF",
+            command=self.exportar_pdf,
+            width=140,
+            height=35
+        )
+        btn_pdf.pack(anchor="e", padx=30)
 
         # SCROLL (resolve corte de tela)
         self.area = ctk.CTkScrollableFrame(self)
@@ -81,25 +92,35 @@ class ReportsView(ctk.CTkFrame):
         card = ctk.CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         card.pack(side="left", expand=True, fill="x", padx=5)
 
-        ctk.CTkLabel(card, text=titulo, text_color="#6B7280",
-                     fg_color="#FFFFFF").pack(pady=(8, 2))
+        ctk.CTkLabel(
+            card,
+            text=titulo,
+            text_color="#6B7280",
+            fg_color="#FFFFFF"
+        ).pack(pady=(8, 2))
 
-        ctk.CTkLabel(card, text=str(valor),
-                     font=ctk.CTkFont(size=22, weight="bold"),
-                     fg_color="#FFFFFF").pack(pady=(0, 8))
+        ctk.CTkLabel(
+            card,
+            text=str(valor),
+            font=ctk.CTkFont(size=22, weight="bold"),
+            fg_color="#FFFFFF"
+        ).pack(pady=(0, 8))
 
-    # ================= GRÁFICO (ESTÁVEL) =================
+    # ================= GRÁFICO =================
     def grafico(self, dados):
         box = ctk.CTkFrame(self.area, fg_color="#FFFFFF", corner_radius=10)
         box.pack(fill="x", pady=10)
 
-        ctk.CTkLabel(box, text="Planos",
-                     font=ctk.CTkFont(weight="bold"),
-                     fg_color="#FFFFFF").pack(anchor="w", padx=10, pady=10)
+        ctk.CTkLabel(
+            box,
+            text="Planos",
+            font=ctk.CTkFont(weight="bold"),
+            fg_color="#FFFFFF"
+        ).pack(anchor="w", padx=10, pady=10)
 
         canvas = ctk.CTkCanvas(
             box,
-            width=350,   # ✅ FIXO (evita bug)
+            width=350,
             height=180,
             bg="#FFFFFF",
             highlightthickness=0
@@ -120,8 +141,10 @@ class ReportsView(ctk.CTkFrame):
             altura = (valor / max_val) * 100
 
             canvas.create_rectangle(
-                x, base - altura,
-                x + largura, base,
+                x,
+                base - altura,
+                x + largura,
+                base,
                 fill="#2563EB",
                 outline=""
             )
@@ -179,3 +202,147 @@ class ReportsView(ctk.CTkFrame):
                     text_color="#2563EB",
                     fg_color="#F9FAFB"
                 ).pack(side="right")
+
+    # ================= EXPORTAR PDF =================
+    def exportar_pdf(self):
+        caminho = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            title="Salvar relatório"
+        )
+
+        if not caminho:
+            return
+
+        try:
+            pdf = SimpleDocTemplate(caminho)
+            styles = getSampleStyleSheet()
+
+            elementos = []
+
+            elementos.append(
+                Paragraph("RELATÓRIO DE CONSULTAS", styles["Title"])
+            )
+
+            elementos.append(Spacer(1, 20))
+
+            total = len(self.consultas)
+            convenio = len(
+                [c for c in self.consultas if c["tipo"] == "Convênio"]
+            )
+            particular = len(
+                [c for c in self.consultas if c["tipo"] == "Particular"]
+            )
+
+            elementos.append(
+                Paragraph(f"Total de consultas: {total}", styles["Normal"])
+            )
+
+            elementos.append(
+                Paragraph(f"Consultas por convênio: {convenio}", styles["Normal"])
+            )
+
+            elementos.append(
+                Paragraph(f"Consultas particulares: {particular}", styles["Normal"])
+            )
+
+            elementos.append(Spacer(1, 20))
+
+            elementos.append(
+                Paragraph("ATENDIMENTOS POR PLANO", styles["Heading2"])
+            )
+
+            planos = {}
+
+            for consulta in self.consultas:
+                plano = consulta["plano"] if consulta["plano"] else "Particular"
+                planos[plano] = planos.get(plano, 0) + 1
+
+            for plano, qtd in planos.items():
+                elementos.append(
+                    Paragraph(
+                        f"{plano}: {qtd} atendimento(s)",
+                        styles["Normal"]
+                    )
+                )
+
+            elementos.append(Spacer(1, 20))
+
+            elementos.append(
+                Paragraph("ATENDIMENTOS POR MÉDICO", styles["Heading2"])
+            )
+
+            medicos = {}
+
+            for consulta in self.consultas:
+
+                medico = consulta["medico"]
+                plano = consulta["plano"] if consulta["plano"] else "Particular"
+
+                if medico not in medicos:
+                    medicos[medico] = {}
+
+                medicos[medico][plano] = (
+                    medicos[medico].get(plano, 0) + 1
+                )
+
+            for medico, dados in medicos.items():
+
+                elementos.append(
+                    Paragraph(
+                        f"<b>{medico}</b>",
+                        styles["Heading3"]
+                    )
+                )
+
+                total_medico = sum(dados.values())
+
+                elementos.append(
+                    Paragraph(
+                        f"Total de atendimentos: {total_medico}",
+                        styles["Normal"]
+                    )
+                )
+
+                for plano, qtd in dados.items():
+
+                    elementos.append(
+                        Paragraph(
+                            f"• {plano}: {qtd} atendimento(s)",
+                            styles["Normal"]
+                        )
+                    )
+
+                elementos.append(Spacer(1, 10))
+
+            elementos.append(Spacer(1, 20))
+
+            elementos.append(
+                Paragraph("LISTA COMPLETA DE CONSULTAS", styles["Heading2"])
+            )
+
+            for i, consulta in enumerate(self.consultas, start=1):
+
+                medico = consulta["medico"]
+                tipo = consulta["tipo"]
+                plano = consulta["plano"] if consulta["plano"] else "Particular"
+
+                elementos.append(
+                    Paragraph(
+                        f"{i}. Médico: {medico} | Tipo: {tipo} | Plano: {plano}",
+                        styles["Normal"]
+                    )
+                )
+
+            pdf.build(elementos)
+
+            messagebox.showinfo(
+                "Sucesso",
+                "Relatório exportado com sucesso!"
+            )
+
+        except Exception as erro:
+            messagebox.showerror(
+                "Erro",
+                f"Não foi possível gerar o PDF.\n\n{erro}"
+            )
