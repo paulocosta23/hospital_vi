@@ -41,13 +41,6 @@ class AgendaView(ctk.CTkFrame):
             text_color="white"
         ).place(x=25, y=20)
 
-        ctk.CTkLabel(
-            header,
-            text="Gestão de consultas médicas",
-            font=ctk.CTkFont(size=13),
-            text_color="#BFD7FF"
-        ).place(x=25, y=55)
-
         # ================= CONTROLES DATA =================
         data_frame = ctk.CTkFrame(header, fg_color="transparent")
         data_frame.pack(side="right", padx=15, pady=20)
