@@ -1,31 +1,21 @@
 import customtkinter as ctk
+from .theme import get_color
 
 
 class PatientsView(ctk.CTkFrame):
-
-    # ================= CORES =================
-    AZUL_FUNDO = "#153F68"
-    AZUL_CARD = "#0F2F4F"
-    AZUL_BOTAO = "#2E73AF"
-    CIANO = "#2FC6E8"
-    BRANCO = "#F8FAFC"
-    CINZA = "#475569"
-
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill="both", expand=True)
 
-        self.configure(fg_color=self.AZUL_FUNDO)
+        self.configure(fg_color=get_color("bg"))
 
         self.pacientes = []
         self.filtro_nome = ""
 
         self.render()
 
-    # ================= CPF =================
     def formatar_cpf(self, texto):
-        nums = ''.join(filter(str.isdigit, texto))[:11]
-
+        nums = "".join(filter(str.isdigit, texto))[:11]
         if len(nums) <= 3:
             return nums
         elif len(nums) <= 6:
@@ -35,42 +25,31 @@ class PatientsView(ctk.CTkFrame):
         else:
             return f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
 
-    # ================= UI =================
     def render(self):
         for w in self.winfo_children():
             w.destroy()
 
-        # HEADER
-        header = ctk.CTkFrame(
-            self,
-            fg_color=self.AZUL_CARD,
-            corner_radius=20
-        )
+        header = ctk.CTkFrame(self, fg_color=get_color("panel"), corner_radius=20)
         header.pack(fill="x", padx=25, pady=(20, 10))
 
         ctk.CTkLabel(
             header,
             text="👨‍⚕️ Pacientes",
             font=ctk.CTkFont(size=28, weight="bold"),
-            text_color="white"
+            text_color=get_color("text"),
         ).pack(side="left", padx=20, pady=15)
 
         ctk.CTkButton(
             header,
             text="+ Novo paciente",
-            fg_color=self.AZUL_BOTAO,
-            hover_color="#2563EB",
+            fg_color=get_color("accent"),
+            hover_color=get_color("accent_hover"),
             corner_radius=12,
             height=40,
-            command=self.popup
+            command=self.popup,
         ).pack(side="right", padx=20)
 
-        # BUSCA
-        busca_frame = ctk.CTkFrame(
-            self,
-            fg_color=self.AZUL_CARD,
-            corner_radius=20
-        )
+        busca_frame = ctk.CTkFrame(self, fg_color=get_color("panel"), corner_radius=20)
         busca_frame.pack(fill="x", padx=25, pady=(0, 15))
 
         self.input_busca = ctk.CTkEntry(
@@ -78,52 +57,36 @@ class PatientsView(ctk.CTkFrame):
             placeholder_text="Buscar paciente pelo nome",
             height=42,
             corner_radius=12,
-            fg_color=self.BRANCO,
-            border_color=self.CIANO,
+            fg_color=get_color("surface"),
+            border_color=get_color("border"),
             border_width=2,
-            text_color="#0F172A"
+            text_color=get_color("text"),
         )
-        self.input_busca.pack(
-            side="left",
-            fill="x",
-            expand=True,
-            padx=15,
-            pady=15
-        )
+        self.input_busca.pack(side="left", fill="x", expand=True, padx=15, pady=15)
 
         ctk.CTkButton(
             busca_frame,
             text="Buscar",
-            fg_color=self.AZUL_BOTAO,
-            hover_color="#2563EB",
+            fg_color=get_color("accent"),
+            hover_color=get_color("accent_hover"),
             corner_radius=12,
-            command=self.buscar
+            command=self.buscar,
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
             busca_frame,
             text="Limpar",
-            fg_color="#64748B",
-            hover_color="#475569",
+            fg_color=get_color("text_secondary"),
+            hover_color=get_color("border"),
             corner_radius=12,
-            command=self.limpar_busca
+            command=self.limpar_busca,
         ).pack(side="left", padx=(5, 15))
 
-        # LISTA
-        self.lista = ctk.CTkScrollableFrame(
-            self,
-            fg_color="transparent"
-        )
-        self.lista.pack(
-            fill="both",
-            expand=True,
-            padx=25,
-            pady=(0, 15)
-        )
+        self.lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.lista.pack(fill="both", expand=True, padx=25, pady=(0, 15))
 
         self.render_lista()
 
-    # ================= BUSCA =================
     def buscar(self):
         self.filtro_nome = self.input_busca.get().lower()
         self.render_lista()
@@ -133,39 +96,33 @@ class PatientsView(ctk.CTkFrame):
         self.input_busca.delete(0, "end")
         self.render_lista()
 
-    # ================= LISTA =================
     def render_lista(self):
         for w in self.lista.winfo_children():
             w.destroy()
 
         pacientes = self.pacientes
-
         if self.filtro_nome:
-            pacientes = [
-                p for p in pacientes
-                if self.filtro_nome in p["nome"].lower()
-            ]
+            pacientes = [p for p in pacientes if self.filtro_nome in p["nome"].lower()]
 
         if not pacientes:
             ctk.CTkLabel(
                 self.lista,
                 text="Nenhum paciente cadastrado",
-                text_color="white",
-                font=ctk.CTkFont(size=16)
+                text_color=get_color("text"),
+                font=ctk.CTkFont(size=16),
             ).pack(pady=40)
             return
 
         for p in pacientes:
             self.card(p)
 
-    # ================= CARD =================
     def card(self, p):
         card = ctk.CTkFrame(
             self.lista,
-            fg_color=self.BRANCO,
+            fg_color=get_color("surface"),
             corner_radius=20,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         card.pack(fill="x", pady=8)
 
@@ -179,32 +136,32 @@ class PatientsView(ctk.CTkFrame):
             info,
             text=p["nome"],
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=self.AZUL_CARD
+            text_color=get_color("text"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"CPF: {p['cpf']} | Tel: {p['telefone']}",
-            text_color=self.CINZA
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"Tipo: {p['tipo']} | Plano: {p['plano']}",
-            text_color=self.CINZA
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"Cart.: {p.get('carteirinha','-')} | Nasc: {p.get('nascimento','-')}",
-            text_color=self.CINZA
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"Endereço: {p.get('endereco','-')}",
-            text_color="#64748B",
-            wraplength=450
+            text_color=get_color("text_secondary"),
+            wraplength=450,
         ).pack(anchor="w")
 
         ctk.CTkButton(
@@ -213,12 +170,11 @@ class PatientsView(ctk.CTkFrame):
             width=90,
             height=38,
             corner_radius=12,
-            fg_color=self.AZUL_BOTAO,
-            hover_color="#2563EB",
-            command=lambda p=p: self.popup(p)
+            fg_color=get_color("accent"),
+            hover_color=get_color("accent_hover"),
+            command=lambda p=p: self.popup(p),
         ).pack(side="right")
 
-    # ================= POPUP =================
     def popup(self, paciente=None):
         popup = ctk.CTkToplevel(self)
         popup.geometry("450x650")
@@ -226,21 +182,16 @@ class PatientsView(ctk.CTkFrame):
 
         frame = ctk.CTkFrame(
             popup,
-            fg_color=self.BRANCO,
-            corner_radius=20
+            fg_color=get_color("surface"),
+            corner_radius=20,
         )
-        frame.pack(
-            fill="both",
-            expand=True,
-            padx=20,
-            pady=20
-        )
+        frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         ctk.CTkLabel(
             frame,
             text="👨‍⚕️ Paciente",
             font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=self.AZUL_CARD
+            text_color=get_color("text"),
         ).pack(pady=15)
 
         nome = ctk.CTkEntry(
@@ -249,7 +200,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         nome.pack(fill="x", pady=6)
 
@@ -259,7 +210,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         cpf.pack(fill="x", pady=6)
 
@@ -276,7 +227,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         telefone.pack(fill="x", pady=6)
 
@@ -286,15 +237,15 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         nascimento.pack(fill="x", pady=6)
 
         tipo = ctk.CTkOptionMenu(
             frame,
             values=["Particular", "Convênio"],
-            fg_color=self.AZUL_BOTAO,
-            button_color=self.AZUL_CARD
+            fg_color=get_color("accent"),
+            button_color=get_color("sidebar"),
         )
         tipo.pack(fill="x", pady=6)
 
@@ -304,7 +255,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         plano.pack(fill="x", pady=6)
 
@@ -314,7 +265,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         carteirinha.pack(fill="x", pady=6)
 
@@ -324,7 +275,7 @@ class PatientsView(ctk.CTkFrame):
             height=40,
             corner_radius=12,
             border_width=2,
-            border_color=self.CIANO
+            border_color=get_color("border"),
         )
         endereco.pack(fill="x", pady=6)
 
@@ -338,11 +289,7 @@ class PatientsView(ctk.CTkFrame):
             carteirinha.insert(0, paciente.get("carteirinha", ""))
             endereco.insert(0, paciente.get("endereco", ""))
 
-        erro = ctk.CTkLabel(
-            frame,
-            text="",
-            text_color="#DC2626"
-        )
+        erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack(pady=5)
 
         def salvar():
@@ -358,7 +305,7 @@ class PatientsView(ctk.CTkFrame):
                 "tipo": tipo.get(),
                 "plano": plano.get(),
                 "carteirinha": carteirinha.get(),
-                "endereco": endereco.get()
+                "endereco": endereco.get(),
             }
 
             if paciente:
@@ -374,7 +321,7 @@ class PatientsView(ctk.CTkFrame):
             text="Salvar",
             height=42,
             corner_radius=12,
-            fg_color=self.AZUL_BOTAO,
-            hover_color="#2563EB",
-            command=salvar
+            fg_color=get_color("accent"),
+            hover_color=get_color("accent_hover"),
+            command=salvar,
         ).pack(pady=20)

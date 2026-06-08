@@ -1,11 +1,10 @@
 import customtkinter as ctk
-
+from .theme import get_color
 from views.agenda_view import AgendaView
 from views.patients_view import PatientsView
 from views.doctor_view import DoctorView
 from views.users_view import UsersView
 from views.reports_view import ReportsView
-
 
 
 class DashboardView(ctk.CTkFrame):
@@ -15,72 +14,62 @@ class DashboardView(ctk.CTkFrame):
 
         self.usuario = usuario
         self.botao_ativo = None
-        self.modo = "Light"
+        self.modo = "Dark"
 
-        # CORES
-        self.bg = "#123E6D"
-        self.sidebar_bg = "#081B49"
-        self.topbar_bg = "#243F91"
-        self.accent = "#2EC7E6"
-        self.card_bg = "#F8F9FA"
+        self.bg = get_color("bg")
+        self.sidebar_bg = get_color("sidebar")
+        self.topbar_bg = get_color("topbar")
+        self.accent = get_color("accent")
+        self.card_bg = get_color("card")
 
         self.configure(fg_color=self.bg)
 
-        # BARRA SUPERIOR
         self.topbar = ctk.CTkFrame(
             self,
             height=40,
             fg_color=self.topbar_bg,
-            corner_radius=0
+            corner_radius=0,
         )
         self.topbar.pack(fill="x", side="top")
 
-        # CONTAINER
-        container = ctk.CTkFrame(
-            self,
-            fg_color=self.bg,
-            corner_radius=0
-        )
+        container = ctk.CTkFrame(self, fg_color=self.bg, corner_radius=0)
         container.pack(fill="both", expand=True)
 
-        # SIDEBAR
         sidebar = ctk.CTkFrame(
             container,
             width=250,
             fg_color=self.sidebar_bg,
-            corner_radius=0
+            corner_radius=0,
         )
         sidebar.pack(side="left", fill="y")
-
         self.sidebar = sidebar
 
-        # CONTEÚDO
         self.content = ctk.CTkFrame(
             container,
             fg_color=self.bg,
-            corner_radius=0
+            corner_radius=0,
         )
         self.content.pack(side="left", fill="both", expand=True)
 
-        # LOGO/TÍTULO
         ctk.CTkLabel(
             sidebar,
             text="🏥",
-            font=ctk.CTkFont(size=50)
+            font=ctk.CTkFont(size=50),
+            text_color=get_color("accent"),
         ).pack(pady=(35, 5))
 
         ctk.CTkLabel(
             sidebar,
             text="Clínica Médica",
             font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=self.accent
+            text_color=self.accent,
         ).pack()
 
         ctk.CTkLabel(
             sidebar,
             text="Sistema de gestão",
-            text_color="#D1D5DB",
-            font=ctk.CTkFont(size=12)
+            text_color=get_color("text_secondary"),
+            font=ctk.CTkFont(size=12),
         ).pack(pady=(0, 30))
 
         tipo = self.usuario["tipo"]
@@ -91,7 +80,6 @@ class DashboardView(ctk.CTkFrame):
                 ("👥 Pacientes", self.show_pacientes),
                 ("🚪 Sair", master.show_login),
             ]
-
         elif tipo == "medico":
             menu_items = [
                 ("📅 Minha agenda", self.show_agenda),
@@ -99,8 +87,7 @@ class DashboardView(ctk.CTkFrame):
                 ("📊 Relatórios", self.show_relatorios),
                 ("🚪 Sair", master.show_login),
             ]
-
-        elif tipo == "admin":
+        else:
             menu_items = [
                 ("📅 Agenda", self.show_agenda),
                 ("👥 Pacientes", self.show_pacientes),
@@ -119,18 +106,13 @@ class DashboardView(ctk.CTkFrame):
                 height=45,
                 corner_radius=12,
                 fg_color=self.sidebar_bg,
-                hover_color="#184E91",
-                text_color="white",
+                hover_color=get_color("accent_hover"),
+                text_color=get_color("text"),
                 anchor="w",
-                border_width=0
+                border_width=0,
             )
-
             btn.pack(fill="x", padx=15, pady=4)
-
-            btn.configure(
-                command=lambda c=command, b=btn: self.handle_click(c, b)
-            )
-
+            btn.configure(command=lambda c=command, b=btn: self.handle_click(c, b))
             self.botoes_menu.append(btn)
 
         self.btn_tema = ctk.CTkButton(
@@ -139,22 +121,17 @@ class DashboardView(ctk.CTkFrame):
             height=45,
             corner_radius=12,
             fg_color=self.sidebar_bg,
-            hover_color="#184E91",
-            text_color="white",
-            command=self.toggle_theme
+            hover_color=get_color("accent_hover"),
+            text_color=get_color("text"),
+            command=self.toggle_theme,
         )
-
-        self.btn_tema.pack(
-            fill="x",
-            padx=15,
-            pady=(20, 10)
-        )
+        self.btn_tema.pack(fill="x", padx=15, pady=(20, 10))
 
         ctk.CTkLabel(
             sidebar,
             text=self.usuario["nome"],
-            text_color="#9CA3AF",
-            font=ctk.CTkFont(size=13)
+            text_color=get_color("text_secondary"),
+            font=ctk.CTkFont(size=13),
         ).pack(side="bottom", pady=25)
 
         self.show_welcome()
@@ -170,17 +147,10 @@ class DashboardView(ctk.CTkFrame):
             self.btn_tema.configure(text="🌙 Modo escuro")
 
     def handle_click(self, func, botao):
-
         for b in self.botoes_menu:
-            b.configure(
-                fg_color=self.sidebar_bg,
-                text_color="white"
-            )
+            b.configure(fg_color=self.sidebar_bg, text_color=get_color("text"))
 
-        botao.configure(
-            fg_color=self.accent,
-            text_color="#081B49"
-        )
+        botao.configure(fg_color=self.accent, text_color=get_color("bg"))
 
         self.botao_ativo = botao
         func()
@@ -194,43 +164,35 @@ class DashboardView(ctk.CTkFrame):
 
         card = ctk.CTkFrame(
             self.content,
-            fg_color=self.card_bg,
-            corner_radius=25
+            fg_color=self.accent,
+            corner_radius=25,
         )
+        card.place(relx=0.5, rely=0.5, relwidth=0.5, relheight=0.7, anchor="center")
 
-        card.place(
-            relx=0.5,
-            rely=0.5,
-            relwidth = 0.5,
-            relheight=0.5,
-            anchor="center"
-        )
+        conteudo = ctk.CTkFrame(card, fg_color="transparent")
+        conteudo.place(relx=0.5, rely=0.5, anchor="center")
 
         ctk.CTkLabel(
-            card,
+            conteudo,
             text=f"Bem-vindo, {self.usuario['nome']}",
-            font=ctk.CTkFont(
-                size=30,
-                weight="bold"
-            ),
-            text_color="#0F172A"
-        ).pack(pady=(80, 20))
+            font=ctk.CTkFont(size=40, weight="bold"),
+            text_color=get_color("text"),
+        ).pack(pady=(0, 15))
 
         ctk.CTkLabel(
-            card,
+            conteudo,
             text="Selecione uma opção no menu lateral",
-            font=ctk.CTkFont(size=15),
-            text_color="#64748B"
+            font=ctk.CTkFont(size=20),
+            text_color=get_color("text_secondary"),
         ).pack()
 
         linha = ctk.CTkFrame(
-            card,
+            conteudo,
             width=120,
             height=4,
-            fg_color=self.accent
+            fg_color=self.accent,
         )
-
-        linha.pack(pady=20)
+        linha.pack(pady=(20, 0))
 
     def show_agenda(self):
         self.clear()

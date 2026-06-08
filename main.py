@@ -1,20 +1,21 @@
 import customtkinter as ctk 
 from views.login_view import LoginView
 from views.dashboard_view import DashboardView
+from views.theme import DEFAULT_MODE, set_theme_mode
 
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        ctk.set_appearance_mode("light")
+        set_theme_mode(DEFAULT_MODE)
 
         self.geometry("1000x600")
         self.title("Clínica Médica")
         self.resizable (True , True)
         self.minsize(1530, 850)
         
-        self.after(0, lambda: self.state('zoomed')) #minimizar após a janela esta pronta
+        self.after(0, lambda: self.state('zoomed'))
         self.current_view = None
         self.dashboard = None
         self.usuario_logado = None

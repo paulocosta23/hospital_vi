@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from .theme import get_color
 
 
 class UsersView(ctk.CTkFrame):
@@ -6,63 +7,51 @@ class UsersView(ctk.CTkFrame):
         super().__init__(master)
         self.pack(fill="both", expand=True)
 
-        # ================= THEME =================
-        self.bg = "#0B1220"
-        self.panel = "#0F172A"
-        self.card = "#111C2E"
-        self.primary = "#38BDF8"
-        self.green = "#22C55E"
-        self.text = "#E5E7EB"
-        self.muted = "#94A3B8"
+        self.bg = get_color("bg")
+        self.panel = get_color("panel")
+        self.card = get_color("card")
+        self.primary = get_color("accent")
+        self.green = get_color("success")
+        self.text = get_color("text")
+        self.muted = get_color("text_secondary")
 
         self.configure(fg_color=self.bg)
 
         self.usuarios = []
 
-        # ================= HEADER =================
-        header = ctk.CTkFrame(
-            self,
-            fg_color=self.panel,
-            corner_radius=18,
-            height=70
-        )
+        header = ctk.CTkFrame(self, fg_color=self.panel, corner_radius=18, height=70)
         header.pack(fill="x", padx=18, pady=(18, 10))
 
         ctk.CTkLabel(
             header,
             text="👤 Gestão de Usuários",
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=self.text
+            text_color=self.text,
         ).place(x=20, y=18)
 
         ctk.CTkLabel(
             header,
             text="Controle de acessos do sistema",
             font=ctk.CTkFont(size=12),
-            text_color=self.muted
+            text_color=self.muted,
         ).place(x=20, y=42)
 
         ctk.CTkButton(
             header,
             text="+ Novo usuário",
             fg_color=self.green,
-            hover_color="#16A34A",
+            hover_color=get_color("success_hover"),
             corner_radius=12,
-            command=lambda: self.popup()
+            command=lambda: self.popup(),
         ).pack(side="right", padx=15, pady=18)
 
-        # ================= LISTA =================
-        self.lista = ctk.CTkScrollableFrame(
-            self,
-            fg_color="transparent"
-        )
+        self.lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.lista.pack(fill="both", expand=True, padx=18, pady=10)
 
         self.render()
 
-    # ================= CPF =================
     def formatar_cpf(self, texto):
-        nums = ''.join(filter(str.isdigit, texto))[:11]
+        nums = "".join(filter(str.isdigit, texto))[:11]
         if len(nums) <= 3:
             return nums
         elif len(nums) <= 6:
@@ -72,12 +61,11 @@ class UsersView(ctk.CTkFrame):
         return f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
 
     def ocultar_cpf(self, cpf):
-        nums = ''.join(filter(str.isdigit, cpf))
+        nums = "".join(filter(str.isdigit, cpf))
         if len(nums) < 11:
             return cpf
         return f"{nums[:3]}.***.***-{nums[-2:]}"
 
-    # ================= LISTA =================
     def render(self):
         for w in self.lista.winfo_children():
             w.destroy()
@@ -86,27 +74,26 @@ class UsersView(ctk.CTkFrame):
             ctk.CTkLabel(
                 self.lista,
                 text="Nenhum usuário cadastrado",
-                text_color=self.muted
+                text_color=self.muted,
             ).pack(pady=60)
             return
 
         for u in self.usuarios:
             self.card(u)
 
-    # ================= CARD =================
     def card(self, u):
-
         card = ctk.CTkFrame(
             self.lista,
             fg_color=self.card,
-            corner_radius=16
+            corner_radius=16,
+            border_width=1,
+            border_color=get_color("border"),
         )
         card.pack(fill="x", pady=8)
 
         container = ctk.CTkFrame(card, fg_color="transparent")
         container.pack(fill="x", padx=15, pady=12)
 
-        # INFO
         info = ctk.CTkFrame(container, fg_color="transparent")
         info.pack(side="left", expand=True, fill="x")
 
@@ -114,25 +101,24 @@ class UsersView(ctk.CTkFrame):
             info,
             text=u["nome"],
             font=ctk.CTkFont(size=15, weight="bold"),
-            text_color=self.text
+            text_color=self.text,
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"CPF: {self.ocultar_cpf(u['cpf'])}",
-            text_color=self.muted
+            text_color=self.muted,
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=f"Login: {u['login']}",
-            text_color="#CBD5E1"
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
-        # ROLE BADGE
         role_color = self.primary
         if u["tipo"] == "admin":
-            role_color = "#A855F7"
+            role_color = get_color("purple")
         elif u["tipo"] == "medico":
             role_color = self.green
 
@@ -140,7 +126,7 @@ class UsersView(ctk.CTkFrame):
             container,
             text=u["tipo"].upper(),
             text_color=role_color,
-            font=ctk.CTkFont(size=12, weight="bold")
+            font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="right", padx=10)
 
         ctk.CTkButton(
@@ -149,12 +135,11 @@ class UsersView(ctk.CTkFrame):
             width=80,
             height=30,
             fg_color=self.primary,
-            hover_color="#0EA5E9",
+            hover_color=get_color("accent_hover"),
             corner_radius=10,
-            command=lambda u=u: self.popup(u)
+            command=lambda u=u: self.popup(u),
         ).pack(side="right")
 
-    # ================= POPUP =================
     def popup(self, usuario=None):
         popup = ctk.CTkToplevel(self)
         popup.geometry("420x560")
@@ -168,7 +153,7 @@ class UsersView(ctk.CTkFrame):
             frame,
             text="Usuário",
             font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=self.text
+            text_color=self.text,
         ).pack(pady=10)
 
         nome = ctk.CTkEntry(frame, placeholder_text="Nome")
@@ -186,10 +171,7 @@ class UsersView(ctk.CTkFrame):
         confirmar = ctk.CTkEntry(frame, placeholder_text="Confirmar senha", show="●")
         confirmar.pack(fill="x", pady=6)
 
-        tipo = ctk.CTkOptionMenu(
-            frame,
-            values=["admin", "medico", "recepcionista"]
-        )
+        tipo = ctk.CTkOptionMenu(frame, values=["admin", "medico", "recepcionista"])
         tipo.pack(fill="x", pady=6)
 
         def mascara(event):
@@ -206,7 +188,7 @@ class UsersView(ctk.CTkFrame):
             confirmar.insert(0, usuario["senha"])
             tipo.set(usuario["tipo"])
 
-        erro = ctk.CTkLabel(frame, text="", text_color="#EF4444")
+        erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack()
 
         def salvar():
@@ -219,7 +201,7 @@ class UsersView(ctk.CTkFrame):
                 "cpf": cpf.get(),
                 "login": login.get(),
                 "senha": senha.get(),
-                "tipo": tipo.get()
+                "tipo": tipo.get(),
             }
 
             if usuario:
@@ -234,6 +216,6 @@ class UsersView(ctk.CTkFrame):
             frame,
             text="Salvar",
             fg_color=self.green,
-            hover_color="#16A34A",
-            command=salvar
+            hover_color=get_color("success_hover"),
+            command=salvar,
         ).pack(pady=15)

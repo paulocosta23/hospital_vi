@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from datetime import datetime
 import os
+from .theme import get_color
 
 
 class DoctorView(ctk.CTkFrame):
@@ -8,12 +9,11 @@ class DoctorView(ctk.CTkFrame):
         super().__init__(master)
         self.pack(fill="both", expand=True)
 
-        # ===== THEME =====
-        self.bg = "#123E6D"
-        self.card_bg = "#F8F9FA"
-        self.primary = "#243F91"
-        self.accent = "#2EC7E6"
-        self.success = "#059669"
+        self.bg = get_color("bg")
+        self.card_bg = get_color("card")
+        self.primary = get_color("accent")
+        self.accent = get_color("accent")
+        self.success = get_color("success")
 
         self.configure(fg_color=self.bg)
 
@@ -26,7 +26,6 @@ class DoctorView(ctk.CTkFrame):
 
         self.render_lista()
 
-    # ================= LISTA =================
     def render_lista(self):
         for w in self.winfo_children():
             w.destroy()
@@ -35,7 +34,7 @@ class DoctorView(ctk.CTkFrame):
             self,
             fg_color=self.primary,
             corner_radius=20,
-            height=90
+            height=90,
         )
         header.pack(fill="x", padx=20, pady=(20, 10))
 
@@ -43,26 +42,22 @@ class DoctorView(ctk.CTkFrame):
             header,
             text="🩺 Consultas de Hoje",
             font=ctk.CTkFont(size=24, weight="bold"),
-            text_color="white"
+            text_color=get_color("text"),
         ).pack(anchor="w", padx=25, pady=25)
 
-        lista = ctk.CTkScrollableFrame(
-            self,
-            fg_color="transparent"
-        )
+        lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         lista.pack(fill="both", expand=True, padx=20, pady=10)
 
         for c in self.consultas:
             self.card_consulta(lista, c)
 
-    # ================= CARD CONSULTA =================
     def card_consulta(self, parent, c):
         card = ctk.CTkFrame(
             parent,
             fg_color=self.card_bg,
             corner_radius=18,
             border_width=1,
-            border_color="#E5E7EB"
+            border_color=get_color("border"),
         )
         card.pack(fill="x", pady=8, padx=5)
 
@@ -74,7 +69,7 @@ class DoctorView(ctk.CTkFrame):
             text=c["hora"],
             width=80,
             font=ctk.CTkFont(size=15, weight="bold"),
-            text_color=self.primary
+            text_color=self.primary,
         ).pack(side="left")
 
         info = ctk.CTkFrame(box, fg_color="transparent")
@@ -84,13 +79,13 @@ class DoctorView(ctk.CTkFrame):
             info,
             text=c["paciente"],
             font=ctk.CTkFont(size=15, weight="bold"),
-            text_color="#0F172A"
+            text_color=get_color("text"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             info,
             text=c["cpf"],
-            text_color="#6B7280"
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
         if c.get("anexos"):
@@ -98,20 +93,19 @@ class DoctorView(ctk.CTkFrame):
                 info,
                 text="📎 Documentos disponíveis",
                 text_color=self.accent,
-                font=ctk.CTkFont(size=12, weight="bold")
+                font=ctk.CTkFont(size=12, weight="bold"),
             ).pack(anchor="w", pady=(4, 0))
 
         ctk.CTkButton(
             box,
             text="Iniciar Atendimento",
             fg_color=self.primary,
-            hover_color="#1E3A8A",
+            hover_color=get_color("accent_hover"),
             corner_radius=12,
             width=170,
-            command=lambda c=c: self.abrir_prontuario(c)
+            command=lambda c=c: self.abrir_prontuario(c),
         ).pack(side="right")
 
-    # ================= PRONTUÁRIO =================
     def abrir_prontuario(self, consulta):
         for w in self.winfo_children():
             w.destroy()
@@ -128,14 +122,14 @@ class DoctorView(ctk.CTkFrame):
             width=120,
             fg_color=self.primary,
             corner_radius=12,
-            command=self.render_lista
+            command=self.render_lista,
         ).pack(side="left")
 
         ctk.CTkLabel(
             header,
             text=consulta["paciente"],
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="white"
+            text_color=get_color("text"),
         ).pack(side="left", padx=10)
 
         form = ctk.CTkFrame(
@@ -143,46 +137,43 @@ class DoctorView(ctk.CTkFrame):
             fg_color=self.card_bg,
             corner_radius=20,
             border_width=1,
-            border_color="#E5E7EB"
+            border_color=get_color("border"),
         )
         form.pack(fill="both", expand=True, pady=20)
 
         scroll = ctk.CTkScrollableFrame(form)
         scroll.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # ================= ANEXOS =================
         if consulta.get("anexos"):
             ctk.CTkLabel(
                 scroll,
                 text="📎 Documentos do paciente",
-                font=ctk.CTkFont(size=16, weight="bold")
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color=get_color("text"),
             ).pack(anchor="w", pady=(0, 10))
 
             for arq in consulta["anexos"]:
                 nome = os.path.basename(arq)
-
                 ctk.CTkButton(
                     scroll,
                     text=f"Abrir {nome}",
-                    fg_color="#E5E7EB",
-                    text_color="#111827",
-                    hover_color="#D1D5DB",
-                    command=lambda a=arq: self.abrir_arquivo(a)
+                    fg_color=get_color("surface"),
+                    text_color=get_color("text"),
+                    hover_color=get_color("surface_alt"),
+                    command=lambda a=arq: self.abrir_arquivo(a),
                 ).pack(anchor="w", pady=3)
 
-        # ================= CAMPOS =================
         queixa = self.campo(scroll, "Queixa")
         observacoes = self.campo(scroll, "Observações")
         diagnostico = self.campo(scroll, "Diagnóstico")
         receita = self.campo(scroll, "Receita")
         exames = self.campo(scroll, "Exames")
 
-        # ================= HISTÓRICO =================
         ctk.CTkLabel(
             scroll,
             text="Histórico do paciente",
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color="white"
+            text_color=get_color("text"),
         ).pack(anchor="w", pady=(25, 10))
 
         lista_hist = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -194,7 +185,7 @@ class DoctorView(ctk.CTkFrame):
             ctk.CTkLabel(
                 lista_hist,
                 text="Sem histórico ainda",
-                text_color="#CBD5E1"
+                text_color=get_color("text_secondary"),
             ).pack(anchor="w")
         else:
             for h in reversed(historicos):
@@ -207,38 +198,35 @@ class DoctorView(ctk.CTkFrame):
                 "observacoes": observacoes.get("1.0", "end").strip(),
                 "diagnostico": diagnostico.get("1.0", "end").strip(),
                 "receita": receita.get("1.0", "end").strip(),
-                "exames": exames.get("1.0", "end").strip()
+                "exames": exames.get("1.0", "end").strip(),
             }
 
             if consulta["cpf"] not in self.historico:
                 self.historico[consulta["cpf"]] = []
 
             self.historico[consulta["cpf"]].append(registro)
-
             self.abrir_prontuario(consulta)
 
         ctk.CTkButton(
             container,
             text="Salvar Atendimento",
             fg_color=self.success,
-            hover_color="#047857",
+            hover_color=get_color("success_hover"),
             corner_radius=12,
             height=45,
-            command=salvar
+            command=salvar,
         ).pack(pady=10)
 
-    # ================= ARQUIVO =================
     def abrir_arquivo(self, caminho):
         os.startfile(caminho)
 
-    # ================= HISTÓRICO =================
     def card_hist_premium(self, parent, h):
         card = ctk.CTkFrame(
             parent,
             fg_color=self.card_bg,
             corner_radius=18,
             border_width=1,
-            border_color="#E5E7EB"
+            border_color=get_color("border"),
         )
         card.pack(fill="x", pady=6)
 
@@ -252,16 +240,16 @@ class DoctorView(ctk.CTkFrame):
             top,
             text=f"📅 {h['data']}",
             font=ctk.CTkFont(weight="bold"),
-            text_color=self.primary
+            text_color=self.primary,
         ).pack(side="left")
 
         ctk.CTkButton(
             top,
             text="Ver completo",
             width=110,
-            fg_color="#E5E7EB",
-            text_color="#111827",
-            command=lambda h=h: self.ver_detalhes(h)
+            fg_color=get_color("surface"),
+            text_color=get_color("text"),
+            command=lambda h=h: self.ver_detalhes(h),
         ).pack(side="right")
 
         resumo = ctk.CTkFrame(container, fg_color="transparent")
@@ -270,16 +258,15 @@ class DoctorView(ctk.CTkFrame):
         ctk.CTkLabel(
             resumo,
             text=f"Queixa: {h['queixa']}",
-            text_color="#0F172A"
+            text_color=get_color("text"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             resumo,
             text=f"Diagnóstico: {h['diagnostico']}",
-            text_color="#334155"
+            text_color=get_color("text_secondary"),
         ).pack(anchor="w")
 
-    # ================= DETALHES =================
     def ver_detalhes(self, h):
         popup = ctk.CTkToplevel(self)
         popup.geometry("520x520")
@@ -292,7 +279,8 @@ class DoctorView(ctk.CTkFrame):
         ctk.CTkLabel(
             frame,
             text=f"📅 {h['data']}",
-            font=ctk.CTkFont(size=16, weight="bold")
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=get_color("text"),
         ).pack(anchor="w", pady=10)
 
         campos = [
@@ -307,17 +295,18 @@ class DoctorView(ctk.CTkFrame):
             ctk.CTkLabel(
                 frame,
                 text=titulo,
-                font=ctk.CTkFont(weight="bold")
+                font=ctk.CTkFont(weight="bold"),
+                text_color=get_color("text"),
             ).pack(anchor="w", pady=(10, 0))
 
             ctk.CTkLabel(
                 frame,
                 text=valor or "-",
                 wraplength=460,
-                justify="left"
+                justify="left",
+                text_color=get_color("text_secondary"),
             ).pack(anchor="w")
 
-    # ================= CAMPO =================
     def campo(self, parent, titulo):
         box = ctk.CTkFrame(parent, fg_color="transparent")
         box.pack(fill="x", pady=8)
@@ -326,7 +315,7 @@ class DoctorView(ctk.CTkFrame):
             box,
             text=titulo,
             font=ctk.CTkFont(size=14, weight="bold"),
-            text_color="white"
+            text_color=get_color("text"),
         ).pack(anchor="w", pady=(0, 5))
 
         entry = ctk.CTkTextbox(
@@ -334,7 +323,7 @@ class DoctorView(ctk.CTkFrame):
             height=90,
             corner_radius=12,
             border_width=1,
-            border_color="#CBD5E1"
+            border_color=get_color("border"),
         )
         entry.pack(fill="x")
 
