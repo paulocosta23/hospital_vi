@@ -194,8 +194,6 @@ class DashboardView(ctk.CTkFrame):
 
         card = ctk.CTkFrame(
             self.content,
-            width=750,
-            height=450,
             fg_color=self.card_bg,
             corner_radius=25
         )
@@ -203,6 +201,8 @@ class DashboardView(ctk.CTkFrame):
         card.place(
             relx=0.5,
             rely=0.5,
+            relwidth = 0.5,
+            relheight=0.5,
             anchor="center"
         )
 
