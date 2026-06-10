@@ -24,8 +24,16 @@ def inserir(_dados):
 
 def listar():
     conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM Paciente")
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+                   SELECT
+                   nome,
+                   DATE_FORMAT(data_nascimento, '%%d/%%m/%%Y') as nascimento,
+                   endereco,
+                   cpf,
+                   telefone,
+                   numero_cartao as carteirinha
+                   FROM Paciente""")
     dados = cursor.fetchall()
     cursor.close()
     conn.close()

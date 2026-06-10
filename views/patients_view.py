@@ -1,5 +1,8 @@
 import customtkinter as ctk
 from .theme import get_color
+from controllers.paciente_controller import salvar as salvar_paciente, listar as listar_pacientes
+
+from datetime import datetime
 
 
 class PatientsView(ctk.CTkFrame):
@@ -100,7 +103,7 @@ class PatientsView(ctk.CTkFrame):
         for w in self.lista.winfo_children():
             w.destroy()
 
-        pacientes = self.pacientes
+        pacientes = self.pacientes #listar_pacientes()
         if self.filtro_nome:
             pacientes = [p for p in pacientes if self.filtro_nome in p["nome"].lower()]
 
@@ -194,7 +197,7 @@ class PatientsView(ctk.CTkFrame):
             text_color=get_color("text"),
         ).pack(pady=15)
 
-        nome = ctk.CTkEntry(
+        self.nome = ctk.CTkEntry(
             frame,
             placeholder_text="Nome",
             height=40,
@@ -202,9 +205,9 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        nome.pack(fill="x", pady=6)
+        self.nome.pack(fill="x", pady=6)
 
-        cpf = ctk.CTkEntry(
+        self.cpf = ctk.CTkEntry(
             frame,
             placeholder_text="CPF",
             height=40,
@@ -212,16 +215,16 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        cpf.pack(fill="x", pady=6)
+        self.cpf.pack(fill="x", pady=6)
 
         def mascara(event):
-            valor = self.formatar_cpf(cpf.get())
-            cpf.delete(0, "end")
-            cpf.insert(0, valor)
+            valor = self.formatar_cpf(self.cpf.get())
+            self.cpf.delete(0, "end")
+            self.cpf.insert(0, valor)
 
-        cpf.bind("<KeyRelease>", mascara)
+        self.cpf.bind("<KeyRelease>", mascara)
 
-        telefone = ctk.CTkEntry(
+        self.telefone = ctk.CTkEntry(
             frame,
             placeholder_text="Telefone",
             height=40,
@@ -229,9 +232,9 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        telefone.pack(fill="x", pady=6)
+        self.telefone.pack(fill="x", pady=6)
 
-        nascimento = ctk.CTkEntry(
+        self.nascimento = ctk.CTkEntry(
             frame,
             placeholder_text="Data nascimento",
             height=40,
@@ -239,17 +242,17 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        nascimento.pack(fill="x", pady=6)
+        self.nascimento.pack(fill="x", pady=6)
 
-        tipo = ctk.CTkOptionMenu(
+        self.tipo = ctk.CTkOptionMenu(
             frame,
             values=["Particular", "Convênio"],
             fg_color=get_color("accent"),
             button_color=get_color("sidebar"),
         )
-        tipo.pack(fill="x", pady=6)
+        self.tipo.pack(fill="x", pady=6)
 
-        plano = ctk.CTkEntry(
+        self.plano = ctk.CTkEntry(
             frame,
             placeholder_text="Plano",
             height=40,
@@ -257,9 +260,9 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        plano.pack(fill="x", pady=6)
+        self.plano.pack(fill="x", pady=6)
 
-        carteirinha = ctk.CTkEntry(
+        self.carteirinha = ctk.CTkEntry(
             frame,
             placeholder_text="Carteirinha",
             height=40,
@@ -267,9 +270,9 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        carteirinha.pack(fill="x", pady=6)
+        self.carteirinha.pack(fill="x", pady=6)
 
-        endereco = ctk.CTkEntry(
+        self.endereco = ctk.CTkEntry(
             frame,
             placeholder_text="Endereço",
             height=40,
@@ -277,41 +280,53 @@ class PatientsView(ctk.CTkFrame):
             border_width=2,
             border_color=get_color("border"),
         )
-        endereco.pack(fill="x", pady=6)
+        self.endereco.pack(fill="x", pady=6)
 
         if paciente:
-            nome.insert(0, paciente["nome"])
-            cpf.insert(0, paciente["cpf"])
-            telefone.insert(0, paciente["telefone"])
-            nascimento.insert(0, paciente.get("nascimento", ""))
-            tipo.set(paciente["tipo"])
-            plano.insert(0, paciente["plano"])
-            carteirinha.insert(0, paciente.get("carteirinha", ""))
-            endereco.insert(0, paciente.get("endereco", ""))
+            self.nome.insert(0, paciente["nome"])
+            self.cpf.insert(0, paciente["cpf"])
+            self.telefone.insert(0, paciente["telefone"])
+            self.nascimento.insert(0, paciente.get("nascimento", ""))
+            self.tipo.set(paciente["tipo"])
+            self.plano.insert(0, paciente["plano"])
+            self.carteirinha.insert(0, paciente.get("carteirinha", ""))
+            self.endereco.insert(0, paciente.get("endereco", ""))
 
         erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack(pady=5)
 
         def salvar():
-            if not nome.get():
+            if not self.nome.get():
                 erro.configure(text="Nome obrigatório")
                 return
 
             dados = {
-                "nome": nome.get(),
-                "cpf": cpf.get(),
-                "telefone": telefone.get(),
-                "nascimento": nascimento.get(),
-                "tipo": tipo.get(),
-                "plano": plano.get(),
-                "carteirinha": carteirinha.get(),
-                "endereco": endereco.get(),
+                "nome": self.nome.get(),
+                "cpf": self.cpf.get(),
+                "telefone": self.telefone.get(),
+                "nascimento": self.nascimento.get(),
+                "tipo": self.tipo.get(),
+                "plano": self.plano.get(),
+                "carteirinha": self.carteirinha.get(),
+                "endereco": self.endereco.get(),
             }
-
+            nome = dados["nome"]
+            cpf = dados["cpf"]
+            telefone = dados["telefone"]
+            #tipo = dados["tipo"]
+            #plano = dados["plano"]
+            carteirinha = dados["carteirinha"]
+            endereco = dados["endereco"]
+            data = dados["nascimento"]
+            data_formatada = datetime.strptime(data, "%d/%m/%Y").strftime("%Y-%m-%d")
+            _dados = (nome, data_formatada, endereco, cpf, telefone, carteirinha)
             if paciente:
                 paciente.update(dados)
             else:
+                #dados_paciente = listar_pacientes()
+                #print(dados_paciente)
                 self.pacientes.append(dados)
+                salvar_paciente(_dados)
 
             self.render_lista()
             popup.destroy()
