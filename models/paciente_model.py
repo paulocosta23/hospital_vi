@@ -3,7 +3,7 @@ from config.db import conectar
 def cpf_existe(cpf):
     conn = conectar()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM paciente where cpf = %s", (cpf,))
+    cursor.execute("SELECT COUNT(*) FROM Paciente where cpf = %s", (cpf,))
     resultado = cursor.fetchone()[0]
     
     cursor.close()
@@ -11,13 +11,13 @@ def cpf_existe(cpf):
     return resultado > 0
 
 
-def inserir(dados):
+def inserir(_dados):
     conn = conectar()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO  paciente (nome, data_nascimento, endereco, cpf, telefone, id_plano)
-        VALUES(%s, %s, %s, %s, %s, %s )  
-        """, dados)
+        INSERT INTO  Paciente (nome, data_nascimento, endereco, cpf, telefone, numero_cartao)
+        VALUES(%s, %s, %s, %s, %s, %s )
+        """, _dados)
     conn.commit()
     cursor.close()
     conn.close()
