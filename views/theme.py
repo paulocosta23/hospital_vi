@@ -7,6 +7,7 @@ DEFAULT_MODE = DARK
 
 COLOR_THEME = {
     LIGHT: {
+        "menu_text": "#FFFFFF",
         "bg": "#F8FAFC",
         "panel": "#E2E8F0",
         "surface": "#FFFFFF",
@@ -44,6 +45,7 @@ COLOR_THEME = {
         "login_card_subtitle": "#475569",
     },
     DARK: {
+        "menu_text": "#FCF8F8",
         "bg": "#0F172A",
         "panel": "#1E293B",
         "surface": "#111827",
