@@ -18,6 +18,6 @@ def conectar():
         print(f"Erro ao conectar ao banco de dados: {err}")
         return None
 
-# conexao = conectar()
-# if conexao:
-#     print("Conexão bem-sucedida!")
+conexao = conectar()
+if conexao:
+     print("Conexão bem-sucedida!")

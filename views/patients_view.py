@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BACK-END (comentado – conecte quando quiser)
@@ -514,7 +515,8 @@ class PatientsView(ctk.CTkFrame):
             cpf = dados["cpf"]
             telefone = dados["telefone"]
             carteirinha = dados["carteirinha"]
-            _dados = (nome, data_nascimento, endereco, cpf, telefone, carteirinha)
+            data_formatada = datetime.strptime(data_nascimento, "%d/%m/%Y").strftime("%Y-%m-%d")
+            _dados = (nome, data_formatada, endereco, cpf, telefone, carteirinha)
             if paciente:
                 paciente.update(dados)
                 # ── BACK ─────────────────────────────────────────────────
