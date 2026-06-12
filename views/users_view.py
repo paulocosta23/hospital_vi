@@ -9,7 +9,7 @@ class UsersView(ctk.CTkFrame):
 
         self.bg = get_color("bg")
         self.panel = get_color("panel")
-        self.card = get_color("card")
+        self.card_color = get_color("card")
         self.primary = get_color("accent")
         self.green = get_color("success")
         self.text = get_color("text")
@@ -58,13 +58,12 @@ class UsersView(ctk.CTkFrame):
             return f"{nums[:3]}.{nums[3:]}"
         elif len(nums) <= 9:
             return f"{nums[:3]}.{nums[3:6]}.{nums[6:]}"
-        return f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
+        else:
+            return f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
 
     def ocultar_cpf(self, cpf):
-        nums = "".join(filter(str.isdigit, cpf))
-        if len(nums) < 11:
-            return cpf
-        return f"{nums[:3]}.***.***-{nums[-2:]}"
+        cpf = ''.join(filter(str.isdigit, cpf))  # remove formatação anterior
+        return f"{cpf[:3]}.***.***.{cpf[-2:]}"
 
     def render(self):
         for w in self.lista.winfo_children():
@@ -84,7 +83,7 @@ class UsersView(ctk.CTkFrame):
     def card(self, u):
         card = ctk.CTkFrame(
             self.lista,
-            fg_color=self.card,
+            fg_color=self.card_color,
             corner_radius=16,
             border_width=1,
             border_color=get_color("border"),
@@ -159,8 +158,8 @@ class UsersView(ctk.CTkFrame):
         nome = ctk.CTkEntry(frame, placeholder_text="Nome")
         nome.pack(fill="x", pady=6)
 
-        cpf = ctk.CTkEntry(frame, placeholder_text="CPF")
-        cpf.pack(fill="x", pady=6)
+        self.cpf = ctk.CTkEntry(frame, placeholder_text="CPF")
+        self.cpf.pack(fill="x", pady=6)
 
         login = ctk.CTkEntry(frame, placeholder_text="Login")
         login.pack(fill="x", pady=6)
@@ -175,14 +174,16 @@ class UsersView(ctk.CTkFrame):
         tipo.pack(fill="x", pady=6)
 
         def mascara(event):
-            cpf.delete(0, "end")
-            cpf.insert(0, self.formatar_cpf(cpf.get()))
+            valor = self.formatar_cpf(self.cpf.get())
+            self.cpf.delete(0, "end")
+            self.cpf.insert(0, valor)
 
-        cpf.bind("<KeyRelease>", mascara)
+        self.cpf.bind("<KeyRelease>", mascara)
+
 
         if usuario:
             nome.insert(0, usuario["nome"])
-            cpf.insert(0, usuario["cpf"])
+            self.cpf.insert(0, usuario["cpf"])
             login.insert(0, usuario["login"])
             senha.insert(0, usuario["senha"])
             confirmar.insert(0, usuario["senha"])
@@ -198,7 +199,7 @@ class UsersView(ctk.CTkFrame):
 
             dados = {
                 "nome": nome.get(),
-                "cpf": cpf.get(),
+                "cpf": self.cpf.get(),
                 "login": login.get(),
                 "senha": senha.get(),
                 "tipo": tipo.get(),

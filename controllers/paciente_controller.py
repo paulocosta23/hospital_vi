@@ -14,5 +14,8 @@ def salvar(_dados):
 def listar():
     return paciente_model.listar()
 
-def deletar(id):
-    paciente_model.deletar(id)
+def editar(id_paciente, _dados):
+    paciente_model.editar(id_paciente, _dados)
+
+def deletar(id_paciente):
+    paciente_model.deletar(id_paciente)

@@ -12,7 +12,7 @@ class AgendaView(ctk.CTkFrame):
 
         self.bg = get_color("bg")
         self.panel = get_color("panel")
-        self.card = get_color("card")
+        self.card_color = get_color("card")
         self.soft = get_color("surface_dark")
         self.primary = get_color("accent")
         self.accent = get_color("accent")
@@ -168,7 +168,7 @@ class AgendaView(ctk.CTkFrame):
             self.card(c, i)
 
     def card(self, c, index=0):
-        card = ctk.CTkFrame(self.lista, fg_color=self.card, corner_radius=20)
+        card = ctk.CTkFrame(self.lista, fg_color=self.card_color, corner_radius=20)
         card.pack(fill="x", pady=10)
 
         bar = ctk.CTkFrame(
@@ -237,7 +237,7 @@ class AgendaView(ctk.CTkFrame):
         popup = ctk.CTkToplevel(self)
         popup.geometry("420x520")
         popup.grab_set()
-        popup.configure(fg_color=self.card)
+        popup.configure(fg_color=self.card_color)
 
         frame = ctk.CTkScrollableFrame(popup)
         frame.pack(fill="both", expand=True, padx=20, pady=20)
