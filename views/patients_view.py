@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
 from .theme import get_color
-from controllers.paciente_controller import salvar as salvar_paciente, listar as listar_pacientes, editar as editar_paciente, deletar as deletar_paciente
+from controllers.paciente_controller import salvar as salvar_paciente, listar as listar_pacientes, editar as editar_paciente, deletar as deletar_paciente, lista_planos
 from datetime import datetime
 
 
@@ -160,7 +160,7 @@ class PatientsView(ctk.CTkFrame):
         if  self.plano:
             self.tipo = "Convênio"
             self.plano = self.plano
-        else:
+        elif self.plano is None:
             self.tipo = "Particular"
             self.plano = "-"
         ctk.CTkLabel(
@@ -318,41 +318,71 @@ class PatientsView(ctk.CTkFrame):
             self.telefone.insert(0, paciente["telefone"])
             self.nascimento.insert(0, paciente.get("nascimento", ""))
            # self.tipo.set(self.tipo)
-            self.plano.insert(0, paciente.get("plano", ""))
+            self.plano.insert(0, paciente.get("plano") or "")
             self.carteirinha.insert(0, paciente.get("carteirinha", ""))
             self.endereco.insert(0, paciente.get("endereco", ""))
 
         erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack(pady=5)
+        def mostrar_erro(mensagem):
+            erro.configure(text=mensagem)
+
+            erro.after(
+                4000,
+                lambda: erro.configure(text="")
+            )
 
         def salvar():
             if not self.nome.get() or not self.cpf.get():
-                erro.configure(text="Nome e CPF obrigatórios")
+                mostrar_erro("Nome e CPF obrigatórios")
                 return
 
             try:
-                nome = self.nome.get()
-                cpf = self.cpf.get()
-                telefone = self.telefone.get()
-                plano = self.plano.get()
-                carteirinha = self.carteirinha.get()
-                endereco = self.endereco.get()
                 data = self.nascimento.get()
                 data_formatada = datetime.strptime(data, "%d/%m/%Y").strftime("%Y-%m-%d")
-                _dados = (nome, data_formatada, endereco, cpf, telefone, carteirinha, plano)
-                if paciente:
-                    id_paciente = paciente.get("id_paciente")
-                    editar_paciente(id_paciente, _dados)
-                    # Update existing patient
-                    
-                else:
-                    #dados_paciente = listar_pacientes()
-                    #print(dados_paciente)
-                    #self.pacientes.append(dados)
-                    salvar_paciente(_dados)
             except Exception as e:
-                erro.configure(text="Data de nascimento inválida.")
+                mostrar_erro("Data de nascimento inválida.")
                 return
+           
+            planos = lista_planos()
+            id_plano = None
+           
+            nome = self.nome.get()
+            cpf = self.cpf.get()
+            telefone = self.telefone.get()
+            nome_plano = self.plano.get().strip()
+            carteirinha = self.carteirinha.get()
+            endereco = self.endereco.get()
+            
+            if nome_plano:
+                for plano in planos:
+                    if plano['nome'].lower() == nome_plano.lower():
+                        id_plano = plano['id_plano']
+                if id_plano is None:
+                    mostrar_erro("Plano não encontrado")
+                    return
+           
+            _dados = (nome, data_formatada, endereco, cpf, telefone, carteirinha, id_plano)
+            if paciente:
+                id_paciente = paciente.get("id_paciente")
+                confirmar = editar_paciente(id_paciente, _dados)
+                if confirmar == "CPF já cadastrado":
+                    mostrar_erro(confirmar)
+                    return 
+                else:
+                    CTkMessagebox(title="Sucesso", message=confirmar, icon="check").get()
+                          
+            else:
+                   
+                confirmacao = salvar_paciente(_dados)
+                if confirmacao == "CPF já cadastrado":
+                    mostrar_erro(confirmacao)
+                    return 
+                else:
+                    CTkMessagebox(title="Sucesso", message=confirmacao, icon="check").get()
+
+                    
+            
             self.render_lista()
             popup.destroy()
 
@@ -365,8 +395,9 @@ class PatientsView(ctk.CTkFrame):
             hover_color=get_color("accent_hover"),
             command=salvar,
         ).pack(pady=20)
+    
     def excluir(self, paciente):
-        from CTkMessagebox import CTkMessagebox
+        
         msg = CTkMessagebox(
             title="Confirmar exclusão",
             message=f"Deseja excluir o paciente {paciente['nome']}?",
