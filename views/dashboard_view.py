@@ -3,7 +3,7 @@ from .theme import get_color
 from views.agenda_view import AgendaView
 from views.patients_view import PatientsView
 from views.doctor_view import DoctorView
-from views.users_view import UsersView
+from views.configuracoes_view import ConfiguracoesView
 from views.reports_view import ReportsView
 
 
@@ -102,7 +102,7 @@ class DashboardView(ctk.CTkFrame):
                 ("👥 Pacientes", self.show_pacientes),
                 ("🩺 Atendimentos", self.show_atendimentos),
                 ("📊 Relatórios", self.show_relatorios),
-                ("👤 Usuários", self.show_users),
+                ("⚙️ Configurações", self.show_configuracoes),
                 ("🚪 Sair", master.show_login),
             ]
 
@@ -231,9 +231,9 @@ class DashboardView(ctk.CTkFrame):
         self.clear()
         ReportsView(self.content)
 
-    def show_users(self):
+    def show_configuracoes(self):
         self.clear()
-        UsersView(self.content)
+        ConfiguracoesView(self.content)
 
     def atualizar_cores(self):
         """
