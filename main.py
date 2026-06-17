@@ -1,4 +1,9 @@
+import sys
+import tkinter as tk
+from tkinter import messagebox
+
 import customtkinter as ctk 
+from config import db
 from views.login_view import LoginView
 from views.dashboard_view import DashboardView
 from views.theme import DEFAULT_MODE, set_theme_mode
@@ -64,5 +69,10 @@ class App(ctk.CTk):
 
 
 if __name__ == "__main__":
+    conexao = db.conectar()
+    if conexao is None:
+        sys.exit(1)
+    conexao.close()
+
     app = App()
     app.mainloop()

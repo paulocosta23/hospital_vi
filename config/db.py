@@ -57,11 +57,23 @@ def conectar():
                 connection_timeout=5
             )
     
-    except mysql.connector.Error as err:
-        print(f"Erro ao conectar ao banco de dados (mysql.connector.Error): {err}")
-        return None
     except Exception as err:
-        print(f"Erro inesperado ao conectar ao banco de dados: {err}")
+        print(f"Erro ao conectar ao banco de dados: {err}")
+        mostrar_erro_de_conexao()
         return None
 
-conexao = None
+
+def mostrar_erro_de_conexao():
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Erro de conexão",
+            "Não foi possível conectar ao banco de dados. Verifique sua conexão e tente novamente."
+        )
+        root.destroy()
+    except Exception as err:
+        print("Erro de conexão com o banco de dados. Verifique sua conexão e tente novamente.", err)

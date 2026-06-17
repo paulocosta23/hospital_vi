@@ -2,11 +2,11 @@ import customtkinter as ctk
 from .theme import get_color
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BACK-END (comentado – conecte quando quiser)
+# BACK-END 
 # from controllers.usuario_controller     import salvar, listar, atualizar, deletar as del_usuario
-# from controllers.medico_controller      import salvar, listar, atualizar, deletar as del_medico
+from controllers.medico_controller import salvar as salvar_medico, listar as listar_medico, lista_consultorios, atualizar as atualizar_medico, remover as remover_medico
 # from controllers.plano_controller       import salvar, listar, atualizar, deletar as del_plano
-# from controllers.consultorio_controller import salvar, listar, atualizar, deletar as del_cons
+from controllers.consultorio_controller import salvar as salvar_consultorio, listar as listar_consultorios, atualizar as editar_consutorio, remover as remover_consultorio
 # ─────────────────────────────────────────────────────────────────────────────
 
 ESPECIALIDADES = [
@@ -576,9 +576,15 @@ class AbaMedicos(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            self.medicos.append(dados)
+            #self.medicos.append(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # novo = salvar(dados); self.medicos.append(novo)
+            nome = dados['nome']
+            especialidade = dados['especialidade']
+            crm = dados['crm']
+            id_consultorio = dados['id_consultorio']
+            _dados = (nome, especialidade, crm, id_consultorio)
+            salvar_medico(_dados)
+            print(_dados)
             self._render()
         self._abrir_popup(None, salvar)
 
@@ -656,13 +662,26 @@ class AbaMedicos(ctk.CTkFrame):
         erro.pack(pady=(8, 0))
 
         def _salvar():
-            nome = nome_e.get().strip(); crm = crm_e.get().strip(); cons = cons_e.get().strip()
+
+            consultorios = lista_consultorios()
+            id_consultorio = None
+
+            nome = nome_e.get().strip(); crm = crm_e.get().strip(); cons = int(cons_e.get().strip())
+
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
             if not crm:  erro.configure(text="⚠  CRM é obrigatório."); return
-            if not cons: erro.configure(text="⚠  Consultório é obrigatório."); return
+            if crm is not int:  erro.configure(text="⚠  Número de consultório inválido."); return
+
+            for consultorio in consultorios:
+                if consultorio['numero'] == cons:
+                    id_consultorio = consultorio['id_consultorio']
+            if id_consultorio is None:
+                erro.configure(text="⚠ Consultório não encontrado")
+                return
+
             dados = {
                 "nome": nome, "especialidade": esp_var.get(),
-                "crm": crm, "consultorio": cons, "status": status_var.get(),
+                "crm": crm, "id_consultorio": id_consultorio, "status": status_var.get(),
             }
             on_salvar(dados); _fechar()
 
@@ -876,12 +895,16 @@ class AbaConsultorios(ctk.CTkFrame):
         ).pack(side="right")
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
+        
         self._render()
-        # ── BACK ──────────────────────────────────────────────────────────
-        # self.consultorios = listar(); self._render()
 
     def _render(self):
         for w in self._lista.winfo_children(): w.destroy()
+        
+        # ── BACK ──────────────────────────────────────────────────────────
+        self.consultorios = listar_consultorios()
+        print(self.consultorios)
+        
         total = len(self.consultorios)
         self._lbl_cont.configure(text=f"{total} consultório{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
         if not self.consultorios:
@@ -897,15 +920,16 @@ class AbaConsultorios(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            self.consultorios.append(dados)
+            
             # ── BACK ──────────────────────────────────────────────────────
             # novo = salvar(dados); self.consultorios.append(novo)
-            
             numero = dados['numero']
             andar = dados['andar']
-            #if numero or andar is not int:
-            #    return
-            _dados = (numero, andar)
+            status = dados['status']
+            
+            _dados = (numero, andar, status)
+            salvar_consultorio(_dados)
+
             print(_dados)
             print(dados)
             self._render()
@@ -915,17 +939,29 @@ class AbaConsultorios(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            c.update(dados)
+            #c.update(dados)
             # ── BACK ──────────────────────────────────────────────────────
             # atualizar(c["id"], dados)
+            numero = dados['numero']
+            andar = dados['andar']
+            status = dados['status']
+            _dados = (numero, andar, status)
+            id_consutorio = c['id_consultorio']
+            editar_consutorio(id_consutorio, _dados)
+            print(dados)
+            print(_dados)
+            print(id_consutorio)
+
+
             self._render()
         self._abrir_popup(c, salvar)
 
     def _remover(self, c: dict):
         def ok():
-            self.consultorios.remove(c)
+           #self.consultorios.remove(c)
             # ── BACK ──────────────────────────────────────────────────────
-            # del_cons(c["id"])
+            id_consultorio = c['id_consultorio']
+            remover_consultorio(id_consultorio)
             self._render()
         _confirmar_remocao(self, f"Consultório {c.get('numero', '')}", ok, self._panel)
 
