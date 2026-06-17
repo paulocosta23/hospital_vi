@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from PIL import Image
 from .theme import get_color
 
 
@@ -46,27 +47,18 @@ class LoginView(ctk.CTkFrame):
         content = ctk.CTkFrame(left_inner, fg_color="transparent")
         content.pack(padx=40, pady=40)
 
-        glow = ctk.CTkLabel(
-            content,
-            text="●",
-            font=ctk.CTkFont(size=200),
-            text_color=get_color("info"),
-        )
-        glow.place(relx=0.5, rely=0.2, anchor="center")
+        # glow = ctk.CTkLabel(
+        #     content,
+        #     text="●",
+        #     font=ctk.CTkFont(size=200),
+        #     text_color=get_color("info"),
+        # )
+        # glow.place(relx=0.5, rely=0.2, anchor="center")
 
-        ctk.CTkLabel(
-            content,
-            text="⚕️",
-            font=ctk.CTkFont(size=240, weight="bold"),
-            text_color=get_color("login_icon"),
-        ).pack(pady=(10, 20))
+        logo = Image.open("assets/modo_escuro.png")
+        logo_image = ctk.CTkImage(dark_image=logo, size=(750, 300))
 
-        ctk.CTkLabel(
-            content,
-            text="Clínica Médica",
-            font=ctk.CTkFont(size=30, weight="bold"),
-            text_color=get_color("text"),
-        ).pack(pady=(5, 5))
+        ctk.CTkLabel(content, text="" ,image=logo_image).pack(pady=(5, 5))
 
         divider = ctk.CTkFrame(
             content,

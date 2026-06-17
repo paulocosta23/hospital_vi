@@ -58,7 +58,7 @@ COLOR_THEME = {
         "text": "#F8FAFC",
         "text_secondary": "#94A3B8",
         "text_muted": "#64748B",
-        "accent": "#2EC7E6",
+        "accent": "#2246BA",
         "accent_hover": "#1D4ED8",
         "button": "#2EC7E6",
         "button_hover": "#1D4ED8",
