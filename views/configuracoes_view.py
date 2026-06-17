@@ -900,6 +900,14 @@ class AbaConsultorios(ctk.CTkFrame):
             self.consultorios.append(dados)
             # ── BACK ──────────────────────────────────────────────────────
             # novo = salvar(dados); self.consultorios.append(novo)
+            
+            numero = dados['numero']
+            andar = dados['andar']
+            #if numero or andar is not int:
+            #    return
+            _dados = (numero, andar)
+            print(_dados)
+            print(dados)
             self._render()
         self._abrir_popup(None, salvar)
 
@@ -956,7 +964,11 @@ class AbaConsultorios(ctk.CTkFrame):
         erro.pack(pady=(8, 0))
 
         def _salvar():
-            num = num_e.get().strip(); andar = andar_e.get().strip()
+            try:
+                num = int(num_e.get().strip()); andar = int(andar_e.get().strip())
+            except Exception as e:
+                erro.configure(text="Andar ou número de consultório inválidos.")
+                return
             if not num:   erro.configure(text="⚠  Número é obrigatório."); return
             if not andar: erro.configure(text="⚠  Andar é obrigatório."); return
             on_salvar({"numero": num, "andar": andar, "status": status_var.get()})
