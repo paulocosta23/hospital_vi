@@ -1,4 +1,6 @@
 import customtkinter as ctk
+from controllers.usuario_controller import login
+from tkinter import messagebox
 from .theme import get_color
 
 
@@ -184,4 +186,39 @@ class LoginView(ctk.CTkFrame):
         self.entry_password.configure(show="" if self.show_password else "●")
 
     def login(self):
-        self.on_login()
+        try:
+            username = self.entry_user.get().strip()
+            senha = self.entry_password.get().strip()
+            
+            # Campos vazios
+            if not username or not senha:
+                messagebox.showwarning("Atenção", "Preencha usuário e senha")
+                return
+            
+            usuario = login(username, senha)
+            # Usuário não existe
+            if usuario == "usuario_nao_existe":
+                messagebox.showerror("Erro", "Usuário não encontrado")
+                self.entry_user.focus()
+
+            # Senha incorreta 
+            elif usuario == "Senha_incorreta":
+                messagebox.showerror("Erro", "Senha incorreta")
+                self.entry_password.focus()
+
+            # Login correto
+            elif usuario:
+                self.usuario = (usuario[1], usuario[2])
+                print(self.usuario)
+
+                self.on_login(self.usuario)
+               
+
+            # fallback (segurança extra)
+            else:
+                messagebox.showerror("Erro", "Erro inesperado do login")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Erro", "Erro interno do sistema")

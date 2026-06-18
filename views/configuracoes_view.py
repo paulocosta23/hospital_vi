@@ -15,7 +15,7 @@ ESPECIALIDADES = [
     "Psiquiatria", "Urologia", "Outra",
 ]
 
-TIPOS_USUARIO = ["admin", "medico", "recepcionista"]
+TIPOS_USUARIO = ["admin", "medico", "atendente"]
 STATUS_OPTS   = ["Ativo", "Inativo"]
 
 
@@ -327,7 +327,7 @@ class AbaUsuarios(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            #self.usuarios.append(dados)
+            
             # ── BACK ──────────────────────────────────────────────────────
             nome = dados['nome']
             cpf = dados['cpf']
@@ -346,13 +346,21 @@ class AbaUsuarios(ctk.CTkFrame):
         def salvar(dados):
             u.update(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # atualizar(u["id"], dados)
+            id_usuario = u["id_usuario"]
+            nome = dados['nome']
+            cpf = dados['cpf']
+            login = dados['login']
+            tipo = dados['tipo']
+            senha = dados['senha']
+            _dados = (nome, cpf, login, tipo, senha)
+            editar_usuario(id_usuario, _dados)
+
             self._render()
         self._abrir_popup(u, salvar)
 
     def _remover(self, u: dict):
         def ok():
-            self.usuarios.remove(u)
+            
             # ── BACK ──────────────────────────────────────────────────────
             id_usuario = u["id_usuario"]
             remover_usuario(id_usuario)
@@ -419,16 +427,18 @@ class AbaUsuarios(ctk.CTkFrame):
 
         def _salvar():
             nome  = nome_e.get().strip()
+            cpf = cpf_e.get().strip()
             login = login_e.get().strip()
             senha = senha_e.get()
             conf  = confirma_e.get()
             if not nome:  erro.configure(text="⚠  Nome é obrigatório."); return
             if not login: erro.configure(text="⚠  Login é obrigatório."); return
+            if not cpf: erro.configure(text="⚠  CPF é obrigatório."); return
             if not usuario and not senha: erro.configure(text="⚠  Senha é obrigatória."); return
             if senha and senha != conf:   erro.configure(text="⚠  As senhas não coincidem."); return
             dados = {
                 "nome":  nome,
-                "cpf":   cpf_e.get().strip(),
+                "cpf": cpf,
                 "login": login,
                 "tipo":  tipo_var.get(),
             }

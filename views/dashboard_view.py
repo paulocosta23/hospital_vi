@@ -81,9 +81,9 @@ class DashboardView(ctk.CTkFrame):
         )
         self.lbl_subtitulo.pack(pady=(0, 30))
 
-        tipo = self.usuario["tipo"]
+        tipo = self.usuario[0]
 
-        if tipo == "recepcionista":
+        if tipo == "atendente":
             menu_items = [
                 ("📅 Agenda", self.show_agenda),
                 ("👥 Pacientes", self.show_pacientes),
@@ -141,7 +141,7 @@ class DashboardView(ctk.CTkFrame):
         # Label do usuário na parte inferior da sidebar (referência salva)
         self.lbl_usuario = ctk.CTkLabel(
             sidebar,
-            text=self.usuario["nome"],
+            text=self.usuario[1],
             text_color=get_color("text_secondary"),
             font=ctk.CTkFont(size=13),
         )
@@ -194,7 +194,7 @@ class DashboardView(ctk.CTkFrame):
 
         ctk.CTkLabel(
             conteudo,
-            text=f"Bem-vindo, {self.usuario['nome']}",
+            text=f"Bem-vindo, {self.usuario[1]}",
             font=ctk.CTkFont(size=40, weight="bold"),
             text_color=get_color("text"),
         ).pack(pady=(0, 15))

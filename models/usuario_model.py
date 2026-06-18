@@ -7,7 +7,7 @@ def autenticar(username, senha):
 
     # Verificar se usuário existe
     cursor.execute(
-        "SELECT senha_usuario, tipo_login FROM Usuario WHERE login_usuario = %s", (username,)
+        "SELECT senha_usuario, tipo_login, nome_usuario FROM Usuario WHERE login_usuario = %s", (username,)
     )
 
     usuario = cursor.fetchone()
@@ -18,12 +18,12 @@ def autenticar(username, senha):
     if not usuario:
         return "usuario_nao_existe"
     
-    senha_db, tipo = usuario
+    senha_db, tipo, nome = usuario
 
     if senha != senha_db:
         return "Senha_incorreta"
     
-    return ("ok", tipo)
+    return ("ok", tipo, nome)
 
 def inserir(_dados):
     conn = conectar()
@@ -60,3 +60,14 @@ def listar():
     cursor.close()
     conn.close()
     return dados
+def editar(id_usuario, _dados):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("""
+                   UPDATE Usuario SET nome_usuario=%s, cpf_usuario=%s, login_usuario=%s, tipo_login=%s, senha_usuario
+                   WHERE id_usuario=%s
+                   """, (*_dados, id_usuario))
+    conn.commit()
+    cursor.close()
+    conn.close()
+

@@ -1,6 +1,6 @@
 import sys
-import tkinter as tk
-from tkinter import messagebox
+#import tkinter as tk
+#from tkinter import messagebox
 
 import customtkinter as ctk 
 from config import db
@@ -43,16 +43,13 @@ class App(ctk.CTk):
 
         self.current_view = LoginView(
             self,
-            on_login=self.fake_login
+            on_login=self.informacoes_usuario
         )
 
-    # ---------- login simulado (temporário) ----------
-    def fake_login(self):
-        # 🔹 Ajusta depois com banco
-        self.usuario_logado = {
-            "nome": "Administrador",
-            "tipo": "admin"
-        }
+
+    def informacoes_usuario(self, usuario_logado):
+
+        self.usuario_logado = usuario_logado
 
         self.show_dashboard()
 

@@ -12,5 +12,5 @@ def remover(id_usuario):
 def listar():
     return usuario_model.listar()
 
-def editar():
-    pass
+def editar(id_usuario, _dados):
+    usuario_model.editar(id_usuario, _dados)
