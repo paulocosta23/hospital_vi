@@ -6,11 +6,11 @@ def salvar(_dados):
 def listar():
     return medico_model.listar()
 
-def atualizar():
-    pass
+def atualizar(_dados, id_medico):
+    medico_model.atualizar(_dados,id_medico)
 
-def remover():
-    pass
+def remover(id_medico):
+    medico_model.remover(id_medico)
 
 def lista_consultorios():
     return medico_model.lista_consultorios()

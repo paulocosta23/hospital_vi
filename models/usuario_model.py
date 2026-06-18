@@ -7,7 +7,7 @@ def autenticar(username, senha):
 
     # Verificar se usuário existe
     cursor.execute(
-        "SELECT senha, tipo FROM Usuario WHERE username=%s", (username,)
+        "SELECT senha_usuario, tipo_login FROM Usuario WHERE login_usuario = %s", (username,)
     )
 
     usuario = cursor.fetchone()
@@ -24,3 +24,39 @@ def autenticar(username, senha):
         return "Senha_incorreta"
     
     return ("ok", tipo)
+
+def inserir(_dados):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO Usuario (nome_usuario, cpf_usuario, login_usuario, tipo_login, senha_usuario)
+                   VALUES (%s, %s, %s, %s, %s)
+                   """, _dados)
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def remover(id_usuario):
+    conn = conectar()
+    cursor = conn.cursor()
+    
+    cursor.execute("DELETE FROM Usuario WHERE id_usuario = %s", (id_usuario,))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def listar():
+    conn = conectar()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""SELECT
+                   id_usuario,
+                   nome_usuario as nome,
+                   cpf_usuario as cpf,
+                   login_usuario as login,
+                   tipo_login as tipo,
+                   senha_usuario as senha
+                   FROM Usuario""")
+    dados = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return dados

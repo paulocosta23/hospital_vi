@@ -18,7 +18,7 @@ class App(ctk.CTk):
         self.geometry("1000x600")
         self.title("Clínica Médica")
         self.resizable (True , True)
-        self.minsize(1500, 850)
+        self.minsize(1100, 650)
         
         self.after(0, lambda: self.state('zoomed'))
         self.current_view = None

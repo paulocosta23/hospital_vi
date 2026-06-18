@@ -1,4 +1,16 @@
-from models.usuario_model import autenticar
+from models import usuario_model
 
 def login(username, senha):
-    return autenticar(username, senha)
+    return usuario_model.autenticar(username, senha)
+
+def adicionar(_dados):
+    usuario_model.inserir(_dados)
+
+def remover(id_usuario):
+    usuario_model.remover(id_usuario)
+
+def listar():
+    return usuario_model.listar()
+
+def editar():
+    pass

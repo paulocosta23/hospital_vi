@@ -3,9 +3,9 @@ from .theme import get_color
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BACK-END 
-# from controllers.usuario_controller     import salvar, listar, atualizar, deletar as del_usuario
+from controllers.usuario_controller     import adicionar as salvar_usuario, listar as listar_usuarios, editar as editar_usuario, remover as remover_usuario
 from controllers.medico_controller import salvar as salvar_medico, listar as listar_medico, lista_consultorios, atualizar as atualizar_medico, remover as remover_medico
-# from controllers.plano_controller       import salvar, listar, atualizar, deletar as del_plano
+from controllers.plano_controller       import adicionar as salvar_plano, listar as listar_planos, editar as editar_planos, remover as remover_plano
 from controllers.consultorio_controller import salvar as salvar_consultorio, listar as listar_consultorios, atualizar as editar_consutorio, remover as remover_consultorio
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -286,8 +286,6 @@ class AbaUsuarios(ctk.CTkFrame):
         self._lista.pack(fill="both", expand=True)
 
         self._render()
-        # ── BACK ──────────────────────────────────────────────────────────
-        # self.usuarios = listar(); self._render()
 
     def _filtrar(self):
         self._filtro = self._busca.get().strip().lower(); self._render()
@@ -298,6 +296,9 @@ class AbaUsuarios(ctk.CTkFrame):
     def _render(self):
         for w in self._lista.winfo_children():
             w.destroy()
+
+        # ── BACK ──────────────────────────────────────────────────────────
+        self.usuarios = listar_usuarios()
 
         items = (
             [u for u in self.usuarios if self._filtro in u["nome"].lower()]
@@ -326,9 +327,16 @@ class AbaUsuarios(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            self.usuarios.append(dados)
+            #self.usuarios.append(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # novo = salvar(dados); self.usuarios.append(novo)
+            nome = dados['nome']
+            cpf = dados['cpf']
+            login = dados['login']
+            tipo = dados['tipo']
+            senha = dados['senha']
+            _dados = (nome, cpf, login, tipo, senha)
+
+            salvar_usuario(_dados)
             self._render()
         self._abrir_popup(None, salvar)
 
@@ -346,7 +354,8 @@ class AbaUsuarios(ctk.CTkFrame):
         def ok():
             self.usuarios.remove(u)
             # ── BACK ──────────────────────────────────────────────────────
-            # del_usuario(u["id"])
+            id_usuario = u["id_usuario"]
+            remover_usuario(id_usuario)
             self._render()
         _confirmar_remocao(self, u["nome"], ok, self._panel)
 
@@ -543,8 +552,6 @@ class AbaMedicos(ctk.CTkFrame):
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
         self._render()
-        # ── BACK ──────────────────────────────────────────────────────────
-        # self.medicos = listar(); self._render()
 
     def _filtrar(self):
         self._filtro = self._busca.get().strip().lower(); self._render()
@@ -555,6 +562,9 @@ class AbaMedicos(ctk.CTkFrame):
     def _render(self):
         for w in self._lista.winfo_children():
             w.destroy()
+        # ── BACK ──────────────────────────────────────────────────────────
+        self.medicos = listar_medico()
+        print(self.medicos)
         items = (
             [m for m in self.medicos if self._filtro in m["nome"].lower()]
             if self._filtro else self.medicos
@@ -576,7 +586,6 @@ class AbaMedicos(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            #self.medicos.append(dados)
             # ── BACK ──────────────────────────────────────────────────────
             nome = dados['nome']
             especialidade = dados['especialidade']
@@ -592,17 +601,25 @@ class AbaMedicos(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            m.update(dados)
+            
             # ── BACK ──────────────────────────────────────────────────────
-            # atualizar(m["id"], dados)
+            id_medico = m["id"]
+            nome = dados['nome']
+            especialidade = dados['especialidade']
+            crm = dados['crm']
+            id_consultorio = dados['id_consultorio']
+            _dados = (nome, especialidade, crm, id_consultorio)
+            atualizar_medico(_dados, id_medico)
+
             self._render()
         self._abrir_popup(m, salvar)
 
     def _remover(self, m: dict):
         def ok():
-            self.medicos.remove(m)
+            
             # ── BACK ──────────────────────────────────────────────────────
-            # del_medico(m["id"])
+            id_medico = m['id_medico']
+            remover_medico(id_medico)
             self._render()
         _confirmar_remocao(self, m["nome"], ok, self._panel)
 
@@ -665,13 +682,19 @@ class AbaMedicos(ctk.CTkFrame):
 
             consultorios = lista_consultorios()
             id_consultorio = None
-
-            nome = nome_e.get().strip(); crm = crm_e.get().strip(); cons = int(cons_e.get().strip())
+            try:
+                
+                cons = int(cons_e.get())
+                nome = nome_e.get().strip(); crm = crm_e.get().strip() 
+     
+            except Exception as e:
+                erro.configure(text="⚠  Número de consultório inválido.")
+                return
+            
 
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
             if not crm:  erro.configure(text="⚠  CRM é obrigatório."); return
-            if crm is not int:  erro.configure(text="⚠  Número de consultório inválido."); return
-
+            
             for consultorio in consultorios:
                 if consultorio['numero'] == cons:
                     id_consultorio = consultorio['id_consultorio']
@@ -751,11 +774,12 @@ class AbaPlanos(ctk.CTkFrame):
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
         self._render()
-        # ── BACK ──────────────────────────────────────────────────────────
-        # self.planos = listar(); self._render()
 
     def _render(self):
         for w in self._lista.winfo_children(): w.destroy()
+        # ── BACK ──────────────────────────────────────────────────────────
+        self.planos = listar_planos()
+        
         total = len(self.planos)
         self._lbl_cont.configure(text=f"{total} plano{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
         if not self.planos:
@@ -771,9 +795,12 @@ class AbaPlanos(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            self.planos.append(dados)
+            #self.planos.append(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # novo = salvar(dados); self.planos.append(novo)
+            nome = dados['nome']
+            status = dados['status']
+            _dados = (nome, status)
+            salvar_plano(_dados)
             self._render()
         self._abrir_popup(None, salvar)
 
@@ -781,17 +808,22 @@ class AbaPlanos(ctk.CTkFrame):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            pl.update(dados)
+            #pl.update(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # atualizar(pl["id"], dados)
+            id_plano = pl['id_plano']
+            nome = dados['nome']
+            status = dados['status']
+            _dados = (nome, status)
+            editar_planos(id_plano, _dados)
             self._render()
         self._abrir_popup(pl, salvar)
 
     def _remover(self, pl: dict):
         def ok():
-            self.planos.remove(pl)
+            #self.planos.remove(pl)
             # ── BACK ──────────────────────────────────────────────────────
-            # del_plano(pl["id"])
+            id_plano = pl['id_plano']
+            remover_plano(id_plano)
             self._render()
         _confirmar_remocao(self, pl["nome"], ok, self._panel)
 
@@ -828,8 +860,17 @@ class AbaPlanos(ctk.CTkFrame):
         erro.pack(pady=(8, 0))
 
         def _salvar():
-            nome = nome_e.get().strip()
+            planos = listar_planos()
+            try:
+                nome = str(nome_e.get().strip())
+            except Exception as e:
+                erro.configure(text="⚠ Digite o nome do plano corretamente.")
+                return
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
+            for plano in planos:
+                if plano['nome'].lower() == nome.lower():
+                    erro.configure(text="⚠ Plano já cadastrado")
+                    return
             on_salvar({"nome": nome, "status": status_var.get()})
             _fechar()
 
@@ -859,7 +900,7 @@ class _CardConsultorio(_CardBase):
         linha1 = ctk.CTkFrame(self._info, fg_color="transparent")
         linha1.pack(anchor="w", fill="x")
         ctk.CTkLabel(
-            linha1, text=f"Consultório {c.get('numero', '—')}",
+            linha1, text=f"Consultório n° {c.get('numero', '—')}",
             font=ctk.CTkFont(size=15, weight="bold"), text_color=get_color("text"),
         ).pack(side="left")
         status = c.get("status", "Disponível")
@@ -868,7 +909,7 @@ class _CardConsultorio(_CardBase):
         badge.pack(side="left", padx=(8, 0))
         ctk.CTkLabel(badge, text=f"  {status}  ", font=ctk.CTkFont(size=10, weight="bold"), text_color="white").pack()
         ctk.CTkLabel(
-            self._info, text=f"📍 {c.get('andar', '—')}",
+            self._info, text=f"📍 {c.get('andar', '—')}° andar",
             font=ctk.CTkFont(size=12), text_color=get_color("text_secondary"),
         ).pack(anchor="w", pady=(3, 0))
 
