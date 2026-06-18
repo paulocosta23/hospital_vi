@@ -61,7 +61,7 @@ class DashboardView(ctk.CTkFrame):
             sidebar,
             text="🏥",
             font=ctk.CTkFont(size=50),
-            text_color=get_color("accent"),
+            text_color= "#ffffff",
         )
         self.lbl_logo.pack(pady=(35, 5))
 
@@ -69,7 +69,7 @@ class DashboardView(ctk.CTkFrame):
             sidebar,
             text="Clínica Médica",
             font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=get_color("accent"),
+            text_color= "#ffffff",
         )
         self.lbl_titulo.pack()
 
