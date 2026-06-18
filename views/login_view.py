@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from controllers.usuario_controller import login
+from PIL import Image
 from tkinter import messagebox
 from .theme import get_color
 
