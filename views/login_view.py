@@ -15,163 +15,162 @@ class LoginView(ctk.CTkFrame):
 
         self.configure(fg_color=get_color("login_bg"))
 
-        self.bg_circle1 = ctk.CTkFrame(
-            self,
-            width=300,
-            height=300,
-            fg_color=get_color("login_circle1"),
-            corner_radius=150,
-        )
-        self.bg_circle1.place(x=-100, y=-100)
+        # ── Painel esquerdo (brand) ─────────────────────────────────────────
+        left = ctk.CTkFrame(self, fg_color=get_color("login_left"), corner_radius=0)
+        left.place(relx=0, rely=0, relwidth=0.46, relheight=1)
 
-        self.bg_circle2 = ctk.CTkFrame(
-            self,
-            width=200,
-            height=200,
-            fg_color=get_color("login_circle2"),
-            corner_radius=100,
-        )
-        self.bg_circle2.place(relx=1, rely=1, x=-200, y=-200)
+        # Círculo decorativo superior-esquerdo
+        ctk.CTkFrame(
+            left, width=320, height=320,
+            fg_color=get_color("login_circle1"), corner_radius=160,
+        ).place(x=-120, y=-120)
 
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=40, pady=40)
+        # Círculo decorativo inferior-direito
+        ctk.CTkFrame(
+            left, width=180, height=180,
+            fg_color=get_color("login_circle2"), corner_radius=90,
+        ).place(relx=1, rely=1, x=-60, y=-60)
 
-        left = ctk.CTkFrame(container, fg_color=get_color("login_left"))
-        left.pack(side="left", fill="both", expand=True)
+        # Conteúdo centralizado — limpo e minimalista
+        brand_frame = ctk.CTkFrame(left, fg_color="transparent")
+        brand_frame.place(relx=0.5, rely=0.5, anchor="center")
 
-        left_inner = ctk.CTkFrame(
-            left,
-            fg_color=get_color("login_left_inner"),
-            corner_radius=20,
-        )
-        left_inner.place(relx=0.5, rely=0.5, anchor="center")
+        # Logo ou nome
+        try:
+            logo = Image.open("assets/modo_escuro.png")
+            logo_image = ctk.CTkImage(dark_image=logo, size=(500, 206))
+            ctk.CTkLabel(brand_frame, text="", image=logo_image).pack(pady=(0, 20))
+        except Exception:
+            ctk.CTkLabel(
+                brand_frame, text="Clínica Médica",
+                font=ctk.CTkFont(size=52, weight="bold"),
+                text_color="#FFFFFF",
+            ).pack(pady=(0, 12))
 
-        content = ctk.CTkFrame(left_inner, fg_color="transparent")
-        content.pack(padx=40, pady=40)
-
-        # glow = ctk.CTkLabel(
-        #     content,
-        #     text="●",
-        #     font=ctk.CTkFont(size=200),
-        #     text_color=get_color("info"),
-        # )
-        # glow.place(relx=0.5, rely=0.2, anchor="center")
-
-        logo = Image.open("assets/modo_escuro.png")
-        logo_image = ctk.CTkImage(dark_image=logo, size=(750, 300))
-
-        ctk.CTkLabel(content, text="" ,image=logo_image).pack(pady=(5, 5))
-
-        divider = ctk.CTkFrame(
-            content,
-            height=2,
-            width=120,
-            fg_color=get_color("login_divider"),
-        )
-        divider.pack(pady=(10, 15))
+        # Traço azul divisor
+        ctk.CTkFrame(
+            brand_frame, height=2, width=40,
+            fg_color=get_color("login_divider"), corner_radius=1,
+        ).pack(pady=(0, 18))
 
         ctk.CTkLabel(
-            content,
-            text="Sistema inteligente para gestão\nrápida e eficiente",
-            font=ctk.CTkFont(size=14),
-            text_color=get_color("login_subtitle"),
-            justify="center",
-            wraplength=280,
+            brand_frame, text="SISTEMA DE GESTÃO",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#4A7FD4",
         ).pack()
 
-        right = ctk.CTkFrame(container, fg_color=get_color("login_right"))
-        right.pack(side="right", fill="both", expand=True)
-
-        decor_top = ctk.CTkFrame(
-            right,
-            width=200,
-            height=200,
-            fg_color=get_color("login_decor_top"),
-            corner_radius=100,
+        # ── Linha vertical divisória ────────────────────────────────────────
+        ctk.CTkFrame(self, width=1, fg_color=get_color("border")).place(
+            relx=0.46, rely=0.1, relheight=0.8
         )
-        decor_top.place(x=450, y=-80)
 
-        decor_bottom = ctk.CTkFrame(
-            right,
-            width=250,
-            height=250,
-            fg_color=get_color("login_decor_bottom"),
-            corner_radius=140,
-        )
-        decor_bottom.place(x=350, y=500)
+        # ── Painel direito (formulário) ─────────────────────────────────────
+        right = ctk.CTkFrame(self, fg_color=get_color("login_right"), corner_radius=0)
+        right.place(relx=0.46, rely=0, relwidth=0.54, relheight=1)
 
+        # Card de login
         card = ctk.CTkFrame(
-            right,
-            width=420,
-            height=450,
+            right, width=400, height=480,
             fg_color=get_color("login_card"),
-            corner_radius=20,
-            border_width=2,
+            corner_radius=18,
+            border_width=1,
             border_color=get_color("border"),
         )
         card.place(relx=0.5, rely=0.5, anchor="center")
+        card.pack_propagate(False)
 
-        right_inner = ctk.CTkFrame(card, fg_color="transparent")
-        right_inner.place(relx=0.5, rely=0.5, anchor="center")
+        # Barra de topo azul
+        ctk.CTkFrame(card, height=4, fg_color="#2D5FA8", corner_radius=0).pack(fill="x")
 
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.place(relx=0.5, rely=0.52, anchor="center")
+
+        # Cabeçalho
         ctk.CTkLabel(
-            right_inner,
-            text="Acessar Sistema",
-            font=ctk.CTkFont(size=28, weight="bold"),
+            inner, text="Acessar Sistema",
+            font=ctk.CTkFont(size=26, weight="bold"),
             text_color=get_color("login_card_text"),
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 6))
 
         ctk.CTkLabel(
-            right_inner,
-            text="Entre com suas credenciais",
-            font=ctk.CTkFont(size=14),
+            inner, text="Entre com suas credenciais",
+            font=ctk.CTkFont(size=12),
             text_color=get_color("login_card_subtitle"),
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 28))
+
+        # ── Campo: Usuário ──────────────────────────────────────────────────
+        self._field_label(inner, "Usuário")
 
         self.entry_user = ctk.CTkEntry(
-            right_inner,
-            placeholder_text="👤 Usuário",
-            width=300,
-            height=45,
+            inner,
+            placeholder_text="Digite seu usuário",
+            width=320, height=46,
             fg_color=get_color("surface"),
             border_color=get_color("border"),
+            border_width=1,
             corner_radius=10,
+            font=ctk.CTkFont(size=13),
         )
-        self.entry_user.pack(pady=8)
+        self.entry_user.pack(pady=(0, 16))
+
+        # ── Campo: Senha ────────────────────────────────────────────────────
+        self._field_label(inner, "Senha")
 
         password_frame = ctk.CTkFrame(
-            right_inner,
+            inner,
             fg_color=get_color("surface"),
             corner_radius=10,
-            height=45,
+            height=46, width=320,
+            border_width=1,
+            border_color=get_color("border"),
         )
-        password_frame.pack(pady=8, fill="x")
+        password_frame.pack(pady=(0, 28))
         password_frame.pack_propagate(False)
 
         self.entry_password = ctk.CTkEntry(
             password_frame,
-            placeholder_text="🔒 Senha",
+            placeholder_text="Digite sua senha",
             show="●",
             fg_color="transparent",
             border_width=0,
+            font=ctk.CTkFont(size=13),
         )
-        self.entry_password.pack(side="left", padx=10, expand=True, fill="both")
+        self.entry_password.pack(side="left", padx=(12, 0), expand=True, fill="both")
 
-        self.eye = ctk.CTkLabel(password_frame, text="👁", cursor="hand2")
-        self.eye.pack(side="right", padx=10)
+        self.eye = ctk.CTkLabel(
+            password_frame, text="👁",
+            cursor="hand2",
+            font=ctk.CTkFont(size=16),
+        )
+        self.eye.pack(side="right", padx=12)
         self.eye.bind("<Button-1>", self.toggle_password)
 
+        # Bind Enter
+        self.entry_user.bind("<Return>", lambda e: self.login())
+        self.entry_password.bind("<Return>", lambda e: self.login())
+
+        # ── Botão Entrar ────────────────────────────────────────────────────
         ctk.CTkButton(
-            right_inner,
+            inner,
             text="Entrar",
-            width=300,
-            height=45,
+            width=320, height=48,
             fg_color=get_color("button"),
             hover_color=get_color("button_hover"),
             corner_radius=10,
             font=ctk.CTkFont(size=15, weight="bold"),
             command=self.login,
-        ).pack(pady=(15, 10))
+        ).pack()
+
+    # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _field_label(self, parent, text: str):
+        lbl_frame = ctk.CTkFrame(parent, fg_color="transparent", width=320)
+        lbl_frame.pack(fill="x", pady=(0, 5))
+        ctk.CTkLabel(
+            lbl_frame, text=text,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=get_color("login_card_subtitle"),
+        ).pack(anchor="w")
 
     def toggle_password(self, event=None):
         self.show_password = not self.show_password
@@ -180,37 +179,30 @@ class LoginView(ctk.CTkFrame):
     def login(self):
         try:
             username = self.entry_user.get().strip()
-            senha = self.entry_password.get().strip()
-            
-            # Campos vazios
+            senha    = self.entry_password.get().strip()
+
             if not username or not senha:
                 messagebox.showwarning("Atenção", "Preencha usuário e senha")
                 return
-            
+
             usuario = login(username, senha)
-            # Usuário não existe
+
             if usuario == "usuario_nao_existe":
                 messagebox.showerror("Erro", "Usuário não encontrado")
                 self.entry_user.focus()
 
-            # Senha incorreta 
             elif usuario == "Senha_incorreta":
                 messagebox.showerror("Erro", "Senha incorreta")
                 self.entry_password.focus()
 
-            # Login correto
             elif usuario:
                 self.usuario = (usuario[1], usuario[2])
-                print(self.usuario)
-
                 self.on_login(self.usuario)
-               
 
-            # fallback (segurança extra)
             else:
-                messagebox.showerror("Erro", "Erro inesperado do login")
+                messagebox.showerror("Erro", "Erro inesperado no login")
 
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
             messagebox.showerror("Erro", "Erro interno do sistema")
