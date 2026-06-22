@@ -358,6 +358,7 @@ class PatientsView(ctk.CTkFrame):
                 for plano in planos:
                     if plano['nome'].lower() == nome_plano.lower():
                         id_plano = plano['id_plano']
+                        break
                 if id_plano is None:
                     mostrar_erro("Plano não encontrado")
                     return
