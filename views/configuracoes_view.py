@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from .theme import get_color
+from .loading_overlay import LoadingOverlay
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BACK-END 
@@ -285,6 +286,11 @@ class AbaUsuarios(ctk.CTkFrame):
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
 
+        # Overlay de loading desta aba. Cada aba tem sua própria instância
+        # porque cada uma é um CTkFrame independente — o overlay precisa
+        # cobrir a área da aba ativa, não a ConfiguracoesView inteira.
+        self.loading = LoadingOverlay(self)
+
         self._render()
 
     def _filtrar(self):
@@ -297,38 +303,64 @@ class AbaUsuarios(ctk.CTkFrame):
         for w in self._lista.winfo_children():
             w.destroy()
 
-        # ── BACK ──────────────────────────────────────────────────────────
-        self.usuarios = listar_usuarios()
+        # ------------------------------------------------------------------
+        # ANTES: "self.usuarios = listar_usuarios()" rodava direto aqui,
+        # travando a tela até o MySQL na nuvem responder.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async. O
+        # filtro por nome e a montagem dos cards continuam idênticos,
+        # só que dentro de _ao_concluir.
+        # ------------------------------------------------------------------
+        def _ao_concluir(usuarios):
+            self.usuarios = usuarios
 
-        items = (
-            [u for u in self.usuarios if self._filtro in u["nome"].lower()]
-            if self._filtro else self.usuarios
-        )
-        total = len(items)
-        self._lbl_cont.configure(
-            text=f"{total} usuário{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
-        )
-
-        if not items:
-            f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
-            ctk.CTkLabel(f, text="👥", font=ctk.CTkFont(size=40)).pack()
-            ctk.CTkLabel(f, text="Nenhum usuário cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
-            ctk.CTkLabel(f, text="Clique em '＋ Novo Usuário' para começar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
-            return
-
-        for u in items:
-            _CardUsuario(
-                self._lista, u,
-                on_editar=lambda u=u: self._editar(u),
-                on_remover=lambda u=u: self._remover(u),
+            items = (
+                [u for u in self.usuarios if self._filtro in u["nome"].lower()]
+                if self._filtro else self.usuarios
             )
+            total = len(items)
+            self._lbl_cont.configure(
+                text=f"{total} usuário{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
+            )
+
+            if not items:
+                f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+                ctk.CTkLabel(f, text="👥", font=ctk.CTkFont(size=40)).pack()
+                ctk.CTkLabel(f, text="Nenhum usuário cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
+                ctk.CTkLabel(f, text="Clique em '＋ Novo Usuário' para começar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
+                return
+
+            for u in items:
+                _CardUsuario(
+                    self._lista, u,
+                    on_editar=lambda u=u: self._editar(u),
+                    on_remover=lambda u=u: self._remover(u),
+                )
+
+        def _ao_erro(erro):
+            self._lbl_cont.configure(text="Erro ao carregar usuários")
+            f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+            ctk.CTkLabel(f, text="⚠️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(
+                f, text=f"Não foi possível carregar os usuários.\n{erro}",
+                font=ctk.CTkFont(size=13), text_color=get_color("danger"),
+            ).pack(pady=(8, 4))
+
+        self.loading.run_async(
+            tarefa=listar_usuarios,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando usuários...",
+        )
 
     def _novo(self):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            
+
             # ── BACK ──────────────────────────────────────────────────────
+            # ANTES: salvar_usuario(_dados) rodava direto aqui.
+            # AGORA: mesma chamada, envolvida em run_async.
             nome = dados['nome']
             cpf = dados['cpf']
             login = dados['login']
@@ -336,8 +368,17 @@ class AbaUsuarios(ctk.CTkFrame):
             senha = dados['senha']
             _dados = (nome, cpf, login, tipo, senha)
 
-            salvar_usuario(_dados)
-            self._render()
+            def _ao_erro(erro):
+                # _abrir_popup já foi fechado neste ponto (fluxo original
+                # fechava antes de chamar on_salvar); erro é só registrado.
+                print("Erro ao salvar usuário:", erro)
+
+            self.loading.run_async(
+                tarefa=lambda: salvar_usuario(_dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=_ao_erro,
+                mensagem="Salvando usuário...",
+            )
         self._abrir_popup(None, salvar)
 
     def _editar(self, u: dict):
@@ -353,18 +394,32 @@ class AbaUsuarios(ctk.CTkFrame):
             tipo = dados['tipo']
             senha = dados['senha']
             _dados = (nome, cpf, login, tipo, senha)
-            editar_usuario(id_usuario, _dados)
 
-            self._render()
+            def _ao_erro(erro):
+                print("Erro ao editar usuário:", erro)
+
+            self.loading.run_async(
+                tarefa=lambda: editar_usuario(id_usuario, _dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=_ao_erro,
+                mensagem="Salvando usuário...",
+            )
         self._abrir_popup(u, salvar)
 
     def _remover(self, u: dict):
         def ok():
-            
             # ── BACK ──────────────────────────────────────────────────────
             id_usuario = u["id_usuario"]
-            remover_usuario(id_usuario)
-            self._render()
+
+            def _ao_erro(erro):
+                print("Erro ao remover usuário:", erro)
+
+            self.loading.run_async(
+                tarefa=lambda: remover_usuario(id_usuario),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=_ao_erro,
+                mensagem="Removendo usuário...",
+            )
         _confirmar_remocao(self, u["nome"], ok, self._panel)
 
     def _abrir_popup(self, usuario, on_salvar):
@@ -561,6 +616,10 @@ class AbaMedicos(ctk.CTkFrame):
 
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
+
+        # Overlay de loading desta aba (mesma observação da AbaUsuarios).
+        self.loading = LoadingOverlay(self)
+
         self._render()
 
     def _filtrar(self):
@@ -572,25 +631,49 @@ class AbaMedicos(ctk.CTkFrame):
     def _render(self):
         for w in self._lista.winfo_children():
             w.destroy()
-        # ── BACK ──────────────────────────────────────────────────────────
-        self.medicos = listar_medico()
-        print(self.medicos)
-        items = (
-            [m for m in self.medicos if self._filtro in m["nome"].lower()]
-            if self._filtro else self.medicos
-        )
-        total = len(items)
-        self._lbl_cont.configure(
-            text=f"{total} médico{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
-        )
-        if not items:
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.medicos = listar_medico()" + print(...) rodava
+        # direto aqui, travando a tela.
+        # AGORA: mesma chamada, em thread separada. O print de debug
+        # foi mantido, só passou para dentro de _ao_concluir.
+        # ------------------------------------------------------------------
+        def _ao_concluir(medicos):
+            self.medicos = medicos
+            print(self.medicos)
+
+            items = (
+                [m for m in self.medicos if self._filtro in m["nome"].lower()]
+                if self._filtro else self.medicos
+            )
+            total = len(items)
+            self._lbl_cont.configure(
+                text=f"{total} médico{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
+            )
+            if not items:
+                f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+                ctk.CTkLabel(f, text="👨‍⚕️", font=ctk.CTkFont(size=40)).pack()
+                ctk.CTkLabel(f, text="Nenhum médico cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
+                ctk.CTkLabel(f, text="Clique em '＋ Novo Médico' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
+                return
+            for m in items:
+                _CardMedico(self._lista, m, lambda m=m: self._editar(m), lambda m=m: self._remover(m))
+
+        def _ao_erro(erro):
+            self._lbl_cont.configure(text="Erro ao carregar médicos")
             f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
-            ctk.CTkLabel(f, text="👨‍⚕️", font=ctk.CTkFont(size=40)).pack()
-            ctk.CTkLabel(f, text="Nenhum médico cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
-            ctk.CTkLabel(f, text="Clique em '＋ Novo Médico' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
-            return
-        for m in items:
-            _CardMedico(self._lista, m, lambda m=m: self._editar(m), lambda m=m: self._remover(m))
+            ctk.CTkLabel(f, text="⚠️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(
+                f, text=f"Não foi possível carregar os médicos.\n{erro}",
+                font=ctk.CTkFont(size=13), text_color=get_color("danger"),
+            ).pack(pady=(8, 4))
+
+        self.loading.run_async(
+            tarefa=listar_medico,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando médicos...",
+        )
 
     def _novo(self):
         if self._popup_aberto: return
@@ -602,16 +685,21 @@ class AbaMedicos(ctk.CTkFrame):
             crm = dados['crm']
             id_consultorio = dados['id_consultorio']
             _dados = (nome, especialidade, crm, id_consultorio)
-            salvar_medico(_dados)
             print(_dados)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: salvar_medico(_dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao salvar médico:", erro),
+                mensagem="Salvando médico...",
+            )
         self._abrir_popup(None, salvar)
 
     def _editar(self, m: dict):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            
+
             # ── BACK ──────────────────────────────────────────────────────
             id_medico = m["id"]
             nome = dados['nome']
@@ -619,18 +707,26 @@ class AbaMedicos(ctk.CTkFrame):
             crm = dados['crm']
             id_consultorio = dados['id_consultorio']
             _dados = (nome, especialidade, crm, id_consultorio)
-            atualizar_medico(_dados, id_medico)
 
-            self._render()
+            self.loading.run_async(
+                tarefa=lambda: atualizar_medico(_dados, id_medico),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao editar médico:", erro),
+                mensagem="Salvando médico...",
+            )
         self._abrir_popup(m, salvar)
 
     def _remover(self, m: dict):
         def ok():
-            
             # ── BACK ──────────────────────────────────────────────────────
             id_medico = m['id_medico']
-            remover_medico(id_medico)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: remover_medico(id_medico),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao remover médico:", erro),
+                mensagem="Removendo médico...",
+            )
         _confirmar_remocao(self, m["nome"], ok, self._panel)
 
     def _abrir_popup(self, medico, on_salvar):
@@ -690,33 +786,52 @@ class AbaMedicos(ctk.CTkFrame):
 
         def _salvar():
 
-            consultorios = lista_consultorios()
-            id_consultorio = None
+            # ------------------------------------------------------------
+            # ANTES: "consultorios = lista_consultorios()" rodava direto
+            # aqui (chamada síncrona), travando a janela do popup antes
+            # mesmo de validar os campos.
+            #
+            # AGORA: validação local dos campos roda primeiro (rápida,
+            # não depende de rede). Só DEPOIS dos campos serem válidos é
+            # que disparamos a chamada de rede (lista_consultorios) via
+            # run_async, e dentro do callback resolvemos o id_consultorio
+            # e finalmente chamamos on_salvar — preservando a mesma ordem
+            # de validações que o código original tinha.
+            # ------------------------------------------------------------
             try:
-                
                 cons = int(cons_e.get())
-                nome = nome_e.get().strip(); crm = crm_e.get().strip() 
-     
-            except Exception as e:
+                nome = nome_e.get().strip(); crm = crm_e.get().strip()
+            except Exception:
                 erro.configure(text="⚠  Número de consultório inválido.")
                 return
-            
 
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
             if not crm:  erro.configure(text="⚠  CRM é obrigatório."); return
-            
-            for consultorio in consultorios:
-                if consultorio['numero'] == cons:
-                    id_consultorio = consultorio['id_consultorio']
-            if id_consultorio is None:
-                erro.configure(text="⚠ Consultório não encontrado")
-                return
 
-            dados = {
-                "nome": nome, "especialidade": esp_var.get(),
-                "crm": crm, "id_consultorio": id_consultorio, "status": status_var.get(),
-            }
-            on_salvar(dados); _fechar()
+            def _ao_concluir_consultorios(consultorios):
+                id_consultorio = None
+                for consultorio in consultorios:
+                    if consultorio['numero'] == cons:
+                        id_consultorio = consultorio['id_consultorio']
+                if id_consultorio is None:
+                    erro.configure(text="⚠ Consultório não encontrado")
+                    return
+
+                dados = {
+                    "nome": nome, "especialidade": esp_var.get(),
+                    "crm": crm, "id_consultorio": id_consultorio, "status": status_var.get(),
+                }
+                on_salvar(dados); _fechar()
+
+            def _ao_erro_consultorios(e):
+                erro.configure(text=f"⚠ Erro ao verificar consultório: {e}")
+
+            self.loading.run_async(
+                tarefa=lista_consultorios,
+                ao_concluir=_ao_concluir_consultorios,
+                ao_erro=_ao_erro_consultorios,
+                mensagem="Verificando consultório...",
+            )
 
         ctk.CTkButton(
             frame, text="Salvar",
@@ -783,23 +898,48 @@ class AbaPlanos(ctk.CTkFrame):
         ).pack(side="right")
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
+
+        # Overlay de loading desta aba (mesma observação da AbaUsuarios).
+        self.loading = LoadingOverlay(self)
+
         self._render()
 
     def _render(self):
         for w in self._lista.winfo_children(): w.destroy()
-        # ── BACK ──────────────────────────────────────────────────────────
-        self.planos = listar_planos()
-        
-        total = len(self.planos)
-        self._lbl_cont.configure(text=f"{total} plano{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
-        if not self.planos:
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.planos = listar_planos()" rodava direto aqui.
+        # AGORA: mesma chamada, em thread separada via run_async.
+        # ------------------------------------------------------------------
+        def _ao_concluir(planos):
+            self.planos = planos
+
+            total = len(self.planos)
+            self._lbl_cont.configure(text=f"{total} plano{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
+            if not self.planos:
+                f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+                ctk.CTkLabel(f, text="🏥", font=ctk.CTkFont(size=40)).pack()
+                ctk.CTkLabel(f, text="Nenhum plano cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
+                ctk.CTkLabel(f, text="Clique em '＋ Novo Plano' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
+                return
+            for pl in self.planos:
+                _CardPlano(self._lista, pl, lambda pl=pl: self._editar(pl), lambda pl=pl: self._remover(pl))
+
+        def _ao_erro(erro):
+            self._lbl_cont.configure(text="Erro ao carregar planos")
             f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
-            ctk.CTkLabel(f, text="🏥", font=ctk.CTkFont(size=40)).pack()
-            ctk.CTkLabel(f, text="Nenhum plano cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
-            ctk.CTkLabel(f, text="Clique em '＋ Novo Plano' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
-            return
-        for pl in self.planos:
-            _CardPlano(self._lista, pl, lambda pl=pl: self._editar(pl), lambda pl=pl: self._remover(pl))
+            ctk.CTkLabel(f, text="⚠️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(
+                f, text=f"Não foi possível carregar os planos.\n{erro}",
+                font=ctk.CTkFont(size=13), text_color=get_color("danger"),
+            ).pack(pady=(8, 4))
+
+        self.loading.run_async(
+            tarefa=listar_planos,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando planos...",
+        )
 
     def _novo(self):
         if self._popup_aberto: return
@@ -810,8 +950,13 @@ class AbaPlanos(ctk.CTkFrame):
             nome = dados['nome']
             status = dados['status']
             _dados = (nome, status)
-            salvar_plano(_dados)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: salvar_plano(_dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao salvar plano:", erro),
+                mensagem="Salvando plano...",
+            )
         self._abrir_popup(None, salvar)
 
     def _editar(self, pl: dict):
@@ -824,8 +969,13 @@ class AbaPlanos(ctk.CTkFrame):
             nome = dados['nome']
             status = dados['status']
             _dados = (nome, status)
-            editar_planos(id_plano, _dados)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: editar_planos(id_plano, _dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao editar plano:", erro),
+                mensagem="Salvando plano...",
+            )
         self._abrir_popup(pl, salvar)
 
     def _remover(self, pl: dict):
@@ -833,8 +983,13 @@ class AbaPlanos(ctk.CTkFrame):
             #self.planos.remove(pl)
             # ── BACK ──────────────────────────────────────────────────────
             id_plano = pl['id_plano']
-            remover_plano(id_plano)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: remover_plano(id_plano),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao remover plano:", erro),
+                mensagem="Removendo plano...",
+            )
         _confirmar_remocao(self, pl["nome"], ok, self._panel)
 
     def _abrir_popup(self, plano, on_salvar):
@@ -870,19 +1025,37 @@ class AbaPlanos(ctk.CTkFrame):
         erro.pack(pady=(8, 0))
 
         def _salvar():
-            planos = listar_planos()
             try:
                 nome = str(nome_e.get().strip())
-            except Exception as e:
+            except Exception:
                 erro.configure(text="⚠ Digite o nome do plano corretamente.")
                 return
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
-            for plano in planos:
-                if plano['nome'].lower() == nome.lower():
-                    erro.configure(text="⚠ Plano já cadastrado")
-                    return
-            on_salvar({"nome": nome, "status": status_var.get()})
-            _fechar()
+
+            # ------------------------------------------------------------
+            # ANTES: "planos = listar_planos()" rodava direto aqui para
+            # checar duplicidade de nome, travando o popup.
+            # AGORA: mesma checagem, só que a chamada de rede vai via
+            # run_async; o resto da validação (comparação de nomes)
+            # roda dentro do callback, exatamente como antes.
+            # ------------------------------------------------------------
+            def _ao_concluir(planos):
+                for plano_existente in planos:
+                    if plano_existente['nome'].lower() == nome.lower():
+                        erro.configure(text="⚠ Plano já cadastrado")
+                        return
+                on_salvar({"nome": nome, "status": status_var.get()})
+                _fechar()
+
+            def _ao_erro(e):
+                erro.configure(text=f"⚠ Erro ao verificar plano: {e}")
+
+            self.loading.run_async(
+                tarefa=listar_planos,
+                ao_concluir=_ao_concluir,
+                ao_erro=_ao_erro,
+                mensagem="Verificando plano...",
+            )
 
         ctk.CTkButton(frame, text="Salvar", fg_color=get_color("success"), hover_color=get_color("success_hover"), height=40, corner_radius=10, font=ctk.CTkFont(size=14, weight="bold"), command=_salvar).pack(fill="x", pady=(12, 4))
         ctk.CTkButton(frame, text="Cancelar", fg_color="transparent", border_width=1, border_color=get_color("border"), text_color=self._muted, height=36, corner_radius=10, command=_fechar).pack(fill="x", pady=(0, 8))
@@ -946,44 +1119,70 @@ class AbaConsultorios(ctk.CTkFrame):
         ).pack(side="right")
         self._lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self._lista.pack(fill="both", expand=True)
-        
+
+        # Overlay de loading desta aba (mesma observação da AbaUsuarios).
+        self.loading = LoadingOverlay(self)
+
         self._render()
 
     def _render(self):
         for w in self._lista.winfo_children(): w.destroy()
-        
-        # ── BACK ──────────────────────────────────────────────────────────
-        self.consultorios = listar_consultorios()
-        print(self.consultorios)
-        
-        total = len(self.consultorios)
-        self._lbl_cont.configure(text=f"{total} consultório{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
-        if not self.consultorios:
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultorios = listar_consultorios()" + print(...)
+        # rodava direto aqui, travando a tela.
+        # AGORA: mesma chamada, em thread separada. print de debug mantido.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultorios):
+            self.consultorios = consultorios
+            print(self.consultorios)
+
+            total = len(self.consultorios)
+            self._lbl_cont.configure(text=f"{total} consultório{'s' if total != 1 else ''} cadastrado{'s' if total != 1 else ''}")
+            if not self.consultorios:
+                f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+                ctk.CTkLabel(f, text="🚪", font=ctk.CTkFont(size=40)).pack()
+                ctk.CTkLabel(f, text="Nenhum consultório cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
+                ctk.CTkLabel(f, text="Clique em '＋ Novo Consultório' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
+                return
+            for c in self.consultorios:
+                _CardConsultorio(self._lista, c, lambda c=c: self._editar(c), lambda c=c: self._remover(c))
+
+        def _ao_erro(erro):
+            self._lbl_cont.configure(text="Erro ao carregar consultórios")
             f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
-            ctk.CTkLabel(f, text="🚪", font=ctk.CTkFont(size=40)).pack()
-            ctk.CTkLabel(f, text="Nenhum consultório cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
-            ctk.CTkLabel(f, text="Clique em '＋ Novo Consultório' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
-            return
-        for c in self.consultorios:
-            _CardConsultorio(self._lista, c, lambda c=c: self._editar(c), lambda c=c: self._remover(c))
+            ctk.CTkLabel(f, text="⚠️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(
+                f, text=f"Não foi possível carregar os consultórios.\n{erro}",
+                font=ctk.CTkFont(size=13), text_color=get_color("danger"),
+            ).pack(pady=(8, 4))
+
+        self.loading.run_async(
+            tarefa=listar_consultorios,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultórios...",
+        )
 
     def _novo(self):
         if self._popup_aberto: return
         self._popup_aberto = True
         def salvar(dados):
-            
+
             # ── BACK ──────────────────────────────────────────────────────
-            # novo = salvar(dados); self.consultorios.append(novo)
             numero = dados['numero']
             andar = dados['andar']
             status = dados['status']
-            
             _dados = (numero, andar, status)
-            salvar_consultorio(_dados)
-
             print(_dados)
             print(dados)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: salvar_consultorio(_dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao salvar consultório:", erro),
+                mensagem="Salvando consultório...",
+            )
         self._abrir_popup(None, salvar)
 
     def _editar(self, c: dict):
@@ -992,19 +1191,21 @@ class AbaConsultorios(ctk.CTkFrame):
         def salvar(dados):
             #c.update(dados)
             # ── BACK ──────────────────────────────────────────────────────
-            # atualizar(c["id"], dados)
             numero = dados['numero']
             andar = dados['andar']
             status = dados['status']
             _dados = (numero, andar, status)
             id_consutorio = c['id_consultorio']
-            editar_consutorio(id_consutorio, _dados)
             print(dados)
             print(_dados)
             print(id_consutorio)
 
-
-            self._render()
+            self.loading.run_async(
+                tarefa=lambda: editar_consutorio(id_consutorio, _dados),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao editar consultório:", erro),
+                mensagem="Salvando consultório...",
+            )
         self._abrir_popup(c, salvar)
 
     def _remover(self, c: dict):
@@ -1012,8 +1213,13 @@ class AbaConsultorios(ctk.CTkFrame):
            #self.consultorios.remove(c)
             # ── BACK ──────────────────────────────────────────────────────
             id_consultorio = c['id_consultorio']
-            remover_consultorio(id_consultorio)
-            self._render()
+
+            self.loading.run_async(
+                tarefa=lambda: remover_consultorio(id_consultorio),
+                ao_concluir=lambda resultado: self._render(),
+                ao_erro=lambda erro: print("Erro ao remover consultório:", erro),
+                mensagem="Removendo consultório...",
+            )
         _confirmar_remocao(self, f"Consultório {c.get('numero', '')}", ok, self._panel)
 
     def _abrir_popup(self, cons, on_salvar):
@@ -1053,7 +1259,7 @@ class AbaConsultorios(ctk.CTkFrame):
         def _salvar():
             try:
                 num = int(num_e.get().strip()); andar = int(andar_e.get().strip())
-            except Exception as e:
+            except Exception:
                 erro.configure(text="Andar ou número de consultório inválidos.")
                 return
             if not num:   erro.configure(text="⚠  Número é obrigatório."); return

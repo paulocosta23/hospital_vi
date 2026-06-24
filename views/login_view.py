@@ -3,6 +3,7 @@ from controllers.usuario_controller import login
 from PIL import Image
 from tkinter import messagebox
 from .theme import get_color
+from .loading_overlay import LoadingOverlay
 
 
 class LoginView(ctk.CTkFrame):
@@ -150,7 +151,7 @@ class LoginView(ctk.CTkFrame):
         self.entry_password.bind("<Return>", lambda e: self.login())
 
         # ── Botão Entrar ────────────────────────────────────────────────────
-        ctk.CTkButton(
+        self.btn_entrar = ctk.CTkButton(
             inner,
             text="Entrar",
             width=320, height=48,
@@ -159,7 +160,16 @@ class LoginView(ctk.CTkFrame):
             corner_radius=10,
             font=ctk.CTkFont(size=15, weight="bold"),
             command=self.login,
-        ).pack()
+        )
+        self.btn_entrar.pack()
+
+        # ------------------------------------------------------------------
+        # Overlay de loading. Criado por último, dentro de `self` (a tela
+        # toda), pra cobrir o card de login + os dois painéis ao mostrar.
+        # Não modifica nada do controller — só envolve a chamada na hora
+        # de exibir feedback visual durante a espera da rede.
+        # ------------------------------------------------------------------
+        self.loading = LoadingOverlay(self)
 
     # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -177,15 +187,32 @@ class LoginView(ctk.CTkFrame):
         self.entry_password.configure(show="" if self.show_password else "●")
 
     def login(self):
-        try:
-            username = self.entry_user.get().strip()
-            senha    = self.entry_password.get().strip()
+        username = self.entry_user.get().strip()
+        senha = self.entry_password.get().strip()
 
-            if not username or not senha:
-                messagebox.showwarning("Atenção", "Preencha usuário e senha")
-                return
+        if not username or not senha:
+            messagebox.showwarning("Atenção", "Preencha usuário e senha")
+            return
 
-            usuario = login(username, senha)
+        # ------------------------------------------------------------------
+        # ANTES: "usuario = login(username, senha)" rodava direto aqui,
+        # na thread principal — travando a janela inteira até o MySQL na
+        # nuvem responder (sem nenhum feedback visual nesse meio tempo).
+        #
+        # AGORA: a MESMA chamada `login(username, senha)` roda dentro de
+        # uma thread separada via `run_async`. O controller não mudou
+        # nem uma linha — só trocamos COMO ele é chamado pela view.
+        #
+        # Desabilito o botão "Entrar" enquanto a chamada está em
+        # andamento, pra reforçar a trava contra clique duplo (overlay
+        # já bloqueia cliques na tela, mas o botão some "ativo" se o
+        # popup do messagebox de erro disparar e o usuário clicar de
+        # novo rápido demais).
+        # ------------------------------------------------------------------
+        self.btn_entrar.configure(state="disabled")
+
+        def _ao_concluir(usuario):
+            self.btn_entrar.configure(state="normal")
 
             if usuario == "usuario_nao_existe":
                 messagebox.showerror("Erro", "Usuário não encontrado")
@@ -202,7 +229,18 @@ class LoginView(ctk.CTkFrame):
             else:
                 messagebox.showerror("Erro", "Erro inesperado no login")
 
-        except Exception:
+        def _ao_erro(erro):
+            # Mantém o mesmo comportamento do try/except original:
+            # loga o traceback completo no terminal pra debug, mas
+            # mostra mensagem genérica pro usuário.
             import traceback
             traceback.print_exc()
+            self.btn_entrar.configure(state="normal")
             messagebox.showerror("Erro", "Erro interno do sistema")
+
+        self.loading.run_async(
+            tarefa=lambda: login(username, senha),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Entrando...",
+        )

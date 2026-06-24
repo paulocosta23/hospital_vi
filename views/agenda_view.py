@@ -2,9 +2,11 @@ import customtkinter as ctk
 from controllers.consulta_controller import ConsultaContrroler
 from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox
+import time 
 import os
 import re
 from .theme import get_color
+from .loading_overlay import LoadingOverlay
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -41,9 +43,6 @@ class AgendaView(ctk.CTkFrame):
         self.arquivos_pdf = []
         self.consulta_controller = ConsultaContrroler()
 
-        self.dados_medico = self.consulta_controller.lista_medico()
-        self.dados_paciente = self.consulta_controller.lista_paciente()
-        print(self.dados_medico)
         # ------------------------------------------------------------------
         # BACKEND: esta lista é o "banco" temporário em memória.
         # Quando ligar no MySQL, troque por algo como:
@@ -52,17 +51,67 @@ class AgendaView(ctk.CTkFrame):
         # o banco, não esta lista do Python.
         # ------------------------------------------------------------------
         self.consultas = []
-        self.consultas = self.consulta_controller.listar()
-        for medico in self.dados_medico:
-            self.medicos.append(medico['nome'])
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.dados_medico = self.consulta_controller.lista_medico()"
+        # e "self.dados_paciente = self.consulta_controller.lista_paciente()"
+        # rodavam direto aqui, no __init__, travando a abertura da tela
+        # inteira até as duas respostas voltarem da nuvem.
+        #
+        # AGORA: a estrutura visual (header + lista vazia) é montada
+        # primeiro, o overlay é criado em seguida, e só então disparamos
+        # as duas chamadas via run_async. O resto do __init__ (render()
+        # inicial) só acontece dentro de _ao_concluir_inicial, depois que
+        # médicos e pacientes já estão carregados — preservando a mesma
+        # ordem de dependência que o código original tinha (self.medicos
+        # é preenchido a partir de self.dados_medico antes de qualquer
+        # popup poder usar o CTkOptionMenu).
+        # ------------------------------------------------------------------
+        self.dados_medico = []
+        self.dados_paciente = []
 
         self._montar_header()
 
         self.lista = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.lista.pack(fill="both", expand=True, padx=20, pady=10)
 
+        self.loading = LoadingOverlay(self)
+
         self.update_data()
-        self.render()
+        self._carregar_dados_iniciais()
+
+    def _carregar_dados_iniciais(self):
+        """Busca médicos e pacientes (necessários antes de qualquer popup
+        funcionar) e, ao concluir, monta a primeira renderização da lista
+        de consultas do dia. Substitui o bloco síncrono que antes rodava
+        direto no __init__."""
+
+        def _tarefa():
+            inicio = time.time()
+            dados_medico = self.consulta_controller.lista_medico()
+            dados_paciente = self.consulta_controller.lista_paciente()
+            print(dados_medico)
+            print(f"Tempo de carregamento inicial (médicos + pacientes): {time.time() - inicio:.2f}s")
+            return dados_medico, dados_paciente
+
+        def _ao_concluir(resultado):
+            self.dados_medico, self.dados_paciente = resultado
+            for medico in self.dados_medico:
+                self.medicos.append(medico['nome'])
+            self.render()
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar agenda",
+                f"Não foi possível carregar médicos e pacientes.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=_tarefa,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando agenda...",
+        )
 
     # ──────────────────────────────────────────────────────────────────
     # HEADER
@@ -285,30 +334,60 @@ class AgendaView(ctk.CTkFrame):
     # ──────────────────────────────────────────────────────────────────
     # LISTAGEM / CARDS
     # ──────────────────────────────────────────────────────────────────
+
+# listar consultas
+
     def render(self):
+        inicio = time.time()
         for w in self.lista.winfo_children():
             w.destroy()
 
         data = self.data_atual.strftime("%d/%m/%Y")
 
-        # BACKEND: aqui é o ponto natural pra trocar por uma query filtrada
-        # e ordenada no banco, ex:
-        #   SELECT * FROM consultas WHERE data = %s ORDER BY hora ASC
-        # Por enquanto filtra e ordena em memória mesmo.
-        consultas = [c for c in self.consultas if c["data"] == data]
-        consultas.sort(key=lambda c: c.get("hora", ""))
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultas = self.consulta_controller.listar()"
+        # rodava direto aqui, travando a tela a cada troca de dia/render.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async. O
+        # filtro por data e a ordenação por hora continuam idênticos, só
+        # que dentro de _ao_concluir — junto com o print de tempo que
+        # você já tinha, mantido para você comparar o antes/depois.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultas):
+            self.consultas = consultas
 
-        if not consultas:
-            ctk.CTkLabel(
-                self.lista,
-                text="📭 Nenhuma consulta neste dia",
-                text_color=self.text_dark,
-                font=ctk.CTkFont(size=14),
-            ).pack(pady=50)
-            return
+            # BACKEND: aqui é o ponto natural pra trocar por uma query filtrada
+            # e ordenada no banco, ex:
+            #   SELECT * FROM consultas WHERE data = %s ORDER BY hora ASC
+            # Por enquanto filtra e ordena em memória mesmo.
+            consultas_do_dia = [c for c in self.consultas if c["data"] == data]
+            consultas_do_dia.sort(key=lambda c: c.get("hora", ""))
 
-        for c in consultas:
-            self.card(c)
+            if not consultas_do_dia:
+                ctk.CTkLabel(
+                    self.lista,
+                    text="📭 Nenhuma consulta neste dia",
+                    text_color=self.text_dark,
+                    font=ctk.CTkFont(size=14),
+                ).pack(pady=50)
+            else:
+                for c in consultas_do_dia:
+                    self.card(c)
+
+            print("render:", time.time() - inicio)
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar as consultas.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=self.consulta_controller.listar,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
 
     def card(self, c):
         card = ctk.CTkFrame(self.lista, fg_color=self.card_color, corner_radius=16)
@@ -485,10 +564,27 @@ class AgendaView(ctk.CTkFrame):
         status.pack(fill="x", pady=(2, 12))
 
         # ---- Pré-preenchimento (modo edição) ----------------------------
-        anexos = list(consulta.get("anexos", [])) if consulta else []
+        #anexos = list(consulta.get("anexos", [])) if consulta else []
+        if consulta:
+            anexos = [
+                {
+                    "nome_original": a["nome_original"],
+                    "caminho": None,
+                    "caminho_storage": a["caminho_storage"],
+                    "id_documento": a["id_documento"],              
+                }
+                for a in consulta.get("anexos", [])
+            ]
+        else:
+            anexos = []
+        
         if consulta:
             paciente.insert(0, consulta.get("paciente", ""))
             cpf.insert(0, consulta.get("cpf", ""))
+
+            paciente.configure(state="disabled")
+            cpf.configure(state="disabled")
+
             medico.set(consulta.get("medico", self.medicos[0]))
             data.insert(0, consulta.get("data", ""))
             hora.insert(0, consulta.get("hora", ""))
@@ -525,15 +621,19 @@ class AgendaView(ctk.CTkFrame):
             # caminho normalizado (os.path.normcase resolve diferenças de
             # maiúsc/minúsc e barras no Windows) em vez do caminho bruto,
             # pra não deixar passar duplicidade por diferença de formatação.
-            arq_normalizado = os.path.normcase(os.path.abspath(arq))
+
+            nome_arquivo = os.path.basename(arq)
+
+           # arq_normalizado = os.path.normcase(os.path.abspath(arq))
             ja_existe = any(
-                os.path.normcase(os.path.abspath(a["caminho"])) == arq_normalizado
+                a["nome_original"].lower() == nome_arquivo.lower()
+                #os.path.normcase(os.path.abspath(a["caminho"])) == arq_normalizado
                 for a in anexos
             )
             if ja_existe:
                 messagebox.showwarning(
                     "Arquivo já anexado",
-                    f"O arquivo \"{os.path.basename(arq)}\" já está anexado a esta consulta.",
+                    f"O arquivo \"{nome_arquivo}\" já está anexado a esta consulta.",
                 )
                 return
 
@@ -550,7 +650,41 @@ class AgendaView(ctk.CTkFrame):
             if not anexos:
                 messagebox.showinfo("Anexos", "Nenhum arquivo anexado ainda.")
                 return
-            self.abrir_arquivo(anexos[-1]["caminho"])
+
+            ultimo = anexos[-1]
+
+            # ------------------------------------------------------------
+            # ANTES: quando o anexo só existia no storage (sem caminho
+            # local), "self.consulta_controller.baixar_anexo(...)" rodava
+            # direto aqui, travando a janela enquanto baixava da nuvem.
+            #
+            # AGORA: se o arquivo já está local (anexo recém-adicionado
+            # nesta sessão), abre direto — não há rede envolvida, então
+            # não precisa de loading. Se precisar baixar do storage,
+            # a chamada de rede vai via run_async.
+            # ------------------------------------------------------------
+            if ultimo["caminho"] is not None:
+                try:
+                    self.abrir_arquivo(ultimo["caminho"])
+                except Exception as e:
+                    messagebox.showerror("ERRO", str(e))
+                return
+
+            def _ao_concluir(caminho):
+                try:
+                    self.abrir_arquivo(caminho)
+                except Exception as e:
+                    messagebox.showerror("ERRO", str(e))
+
+            def _ao_erro(erro):
+                messagebox.showerror("ERRO", str(erro))
+
+            self.loading.run_async(
+                tarefa=lambda: self.consulta_controller.baixar_anexo(ultimo["caminho_storage"]),
+                ao_concluir=_ao_concluir,
+                ao_erro=_ao_erro,
+                mensagem="Baixando anexo...",
+            )
 
         def remover_ultimo_anexo():
             if not anexos:
@@ -598,6 +732,7 @@ class AgendaView(ctk.CTkFrame):
             return erros
 
         def salvar():
+            inicio = time.time()
             erros = validar_formulario()
             if erros:
                 messagebox.showerror("Verifique os campos", "\n".join(erros))
@@ -639,7 +774,7 @@ class AgendaView(ctk.CTkFrame):
                 messagebox.showwarning("Atenção", "Medico não contrado!")
                 return
 
-                                # ------------------------------------------------------------
+            # ------------------------------------------------------------
             # BACKEND: este é o ponto exato de integração com o MySQL.
             #
             # Se for edição (consulta já existe):
@@ -653,37 +788,92 @@ class AgendaView(ctk.CTkFrame):
             # virar registros numa tabela separada `consulta_anexos`
             # (consulta_id, caminho_arquivo, nome_original) em vez de
             # ficarem serializados dentro do registro da consulta.
+            #
+            # ANTES: "self.consulta_controller.editar(...)" ou
+            # "self.consulta_controller.salvar(...)" rodava direto aqui,
+            # travando a janela durante todo o upload dos anexos + grava
+            # ção no banco (potencialmente o trecho mais lento de toda a
+            # tela, já que envolve transferência de arquivo).
+            #
+            # AGORA: mesma chamada (editar ou salvar, conforme o caso),
+            # envolvida em run_async. A leitura do resultado (sucesso,
+            # erros_upload) e as messagebox que dependem dele foram
+            # movidas para dentro de _ao_concluir, mas a lógica de
+            # decisão é idêntica à original.
             # ------------------------------------------------------------
             if consulta:
-                pass#consulta.update(dados)
+                def _tarefa():
+                    return self.consulta_controller.editar(
+                        id_consulta=consulta["id_consulta"],
+                        data_consulta=data_formatada,
+                        hora_consulta=hora_consulta,
+                        tipo_atendimento=tipo_atendimento,
+                        id_medico=id_medico,
+                        arquivos_pdf=anexos,
+                        anexos_antigos=consulta["anexos"],
+                    )
+
+                def _ao_concluir(resultado_editar):
+                    if resultado_editar["sucesso"]:
+                        if resultado_editar["erros_upload"]:
+                            messagebox.showwarning(
+                                "Consulta salva",
+                                "A consulta foi salva, porém alguns documentos não puderam ser anexados:\n\n"
+                                + "\n".join(resultado_editar["erros_upload"])
+                            )
+                        else:
+                            messagebox.showinfo(
+                                "Sucesso",
+                                "Consulta editada com sucesso."
+                            )
+
+                    self.update_data()
+                    self.render()
+                    print("salvar:", time.time() - inicio)
+                    popup.destroy()
+
             else:
-                resultado = self.consulta_controller.salvar(data_consulta=data_formatada,
-                                                hora_consulta=hora_consulta,
-                                                tipo_atendimento=tipo_atendimento,
-                                                id_paciente=id_paciente,
-                                                id_medico=id_medico,
-                                                arquivos_pdf=arquivos_pdf)
-                if resultado["sucesso"]:
+                def _tarefa():
+                    return self.consulta_controller.salvar(
+                        data_consulta=data_formatada,
+                        hora_consulta=hora_consulta,
+                        tipo_atendimento=tipo_atendimento,
+                        id_paciente=id_paciente,
+                        id_medico=id_medico,
+                        arquivos_pdf=arquivos_pdf,
+                    )
 
-                    if resultado["erros_upload"]:
+                def _ao_concluir(resultado):
+                    if resultado["sucesso"]:
+                        if resultado["erros_upload"]:
+                            messagebox.showwarning(
+                                "Consulta salva",
+                                "A consulta foi salva, porém alguns documentos não puderam ser anexados:\n\n"
+                                + "\n".join(resultado["erros_upload"])
+                            )
+                        else:
+                            messagebox.showinfo(
+                                "Sucesso",
+                                "Consulta salva com sucesso."
+                            )
 
-                        messagebox.showwarning(
-                            "Consulta salva",
-                            "A consulta foi salva, porém alguns documentos não puderam ser anexados:\n\n"
-                            + "\n".join(resultado["erros_upload"])
-                        )
+                    self.update_data()
+                    self.render()
+                    print("salvar:", time.time() - inicio)
+                    popup.destroy()
 
-                    else:
+            def _ao_erro(erro):
+                messagebox.showerror(
+                    "Erro ao salvar",
+                    f"Não foi possível salvar a consulta.\nDetalhe: {erro}",
+                )
 
-                        messagebox.showinfo(
-                            "Sucesso",
-                            "Consulta salva com sucesso."
-                        )
-
-
-            self.update_data()
-            self.render()
-            popup.destroy()
+            self.loading.run_async(
+                tarefa=_tarefa,
+                ao_concluir=_ao_concluir,
+                ao_erro=_ao_erro,
+                mensagem="Salvando consulta...",
+            )
 
         def excluir():
             confirmar = messagebox.askyesno(
@@ -709,14 +899,14 @@ class AgendaView(ctk.CTkFrame):
         btns = ctk.CTkFrame(frame, fg_color="transparent")
         btns.pack(fill="x", pady=(5, 0))
 
-        if consulta:
-            ctk.CTkButton(
-                btns,
-                text="Excluir",
-                fg_color="#7C2D2D",
-                hover_color="#9B3A3A",
-                command=excluir,
-            ).pack(side="left", expand=True, padx=(0, 5))
+        #if consulta:
+            #ctk.CTkButton(
+               # btns,
+               # text="Excluir",
+               # fg_color="#7C2D2D",
+               # hover_color="#9B3A3A",
+               # command=excluir,
+           # ).pack(side="left", expand=True, padx=(0, 5))
 
         ctk.CTkButton(
             btns,

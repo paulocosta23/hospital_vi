@@ -27,18 +27,31 @@ def listar():
             p.cpf,
             m.nome as medico,
             DATE_FORMAT(c.data, '%d/%m/%Y') as data,
-            c.hora,
+            TIME_FORMAT(c.hora, '%H:%i') as hora,
             c.tipo_atendimento
         FROM Consulta c
         JOIN Paciente p ON c.id_paciente = p.id_paciente
         JOIN Medico m ON c.id_medico = m.id_medico
-        ORDER BY c.data
     """)
 
     consultas = cursor.fetchall()
     cursor.close()
     conn.close()
     return consultas
+
+def editar(id_consulta, data, hora, tipo_atendimento, id_medico):
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("""UPDATE Consulta
+                   SET data=%s,
+                   hora=%s,
+                   tipo_atendimento=%s,
+                   id_medico=%s
+                   WHERE id_consulta=%s""",
+                   (data, hora, tipo_atendimento, id_medico, id_consulta))
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 def lista_pacientes():
     conn = conectar()
