@@ -43,7 +43,7 @@ class PatientsView(ctk.CTkFrame):
 
         ctk.CTkLabel(
             header,
-            text="👨‍⚕️ Pacientes",
+            text=" Pacientes",
             font=ctk.CTkFont(size=28, weight="bold"),
             text_color=get_color("text"),
         ).pack(side="left", padx=20, pady=15)
