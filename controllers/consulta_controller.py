@@ -1,6 +1,7 @@
 from models import consulta_model
 from models.documento_consulta_model import DocumentoConsultaModel
 from services.storage_service import StorageService
+from datetime import datetime, timedelta
 import time
 
 
@@ -51,8 +52,13 @@ class ConsultaContrroler():
 
     def listar(self):
         inicio = time.time()
-        
-        consultas = consulta_model.listar()
+
+        hoje = datetime.now().date()
+        data_inicio = hoje - timedelta(days=5)
+        data_fim = hoje + timedelta(days=5)
+
+        consultas = consulta_model.listar(data_inicio=data_inicio,
+                                          data_fim=data_fim)
         print("consulta_model:", time.time() - inicio)
 
         documentos = self.documentos_model.listar_todos()

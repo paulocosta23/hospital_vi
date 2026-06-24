@@ -16,23 +16,32 @@ def inserir(data, hora, tipo, id_paciente, id_medico):
     conn.close()
     return id_consulta
 
-def listar():
+def listar(data_inicio, data_fim):
     conn = conectar()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("""
+    
+    sql ="""
         SELECT 
             c.id_consulta,
             p.nome as paciente,
             p.cpf,
             m.nome as medico,
-            DATE_FORMAT(c.data, '%d/%m/%Y') as data,
-            TIME_FORMAT(c.hora, '%H:%i') as hora,
+            DATE_FORMAT(c.data, '%%d/%%m/%%Y') as data,
+            TIME_FORMAT(c.hora, '%%H:%%i') as hora,
             c.tipo_atendimento
-        FROM Consulta c
+        FROM (
+            select id_consulta, id_paciente, id_medico, data, hora, tipo_atendimento 
+            from Consulta 	
+            where data between %s and %s
+        ) as c
         JOIN Paciente p ON c.id_paciente = p.id_paciente
         JOIN Medico m ON c.id_medico = m.id_medico
-    """)
+    """
+    values = data_inicio, data_fim
+    print(sql, values)
+    cursor.execute(sql, values)
+
 
     consultas = cursor.fetchall()
     cursor.close()

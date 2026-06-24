@@ -52,21 +52,6 @@ class AgendaView(ctk.CTkFrame):
         # ------------------------------------------------------------------
         self.consultas = []
 
-        # ------------------------------------------------------------------
-        # ANTES: "self.dados_medico = self.consulta_controller.lista_medico()"
-        # e "self.dados_paciente = self.consulta_controller.lista_paciente()"
-        # rodavam direto aqui, no __init__, travando a abertura da tela
-        # inteira até as duas respostas voltarem da nuvem.
-        #
-        # AGORA: a estrutura visual (header + lista vazia) é montada
-        # primeiro, o overlay é criado em seguida, e só então disparamos
-        # as duas chamadas via run_async. O resto do __init__ (render()
-        # inicial) só acontece dentro de _ao_concluir_inicial, depois que
-        # médicos e pacientes já estão carregados — preservando a mesma
-        # ordem de dependência que o código original tinha (self.medicos
-        # é preenchido a partir de self.dados_medico antes de qualquer
-        # popup poder usar o CTkOptionMenu).
-        # ------------------------------------------------------------------
         self.dados_medico = []
         self.dados_paciente = []
 
@@ -81,29 +66,37 @@ class AgendaView(ctk.CTkFrame):
         self._carregar_dados_iniciais()
 
     def _carregar_dados_iniciais(self):
-        """Busca médicos e pacientes (necessários antes de qualquer popup
-        funcionar) e, ao concluir, monta a primeira renderização da lista
-        de consultas do dia. Substitui o bloco síncrono que antes rodava
-        direto no __init__."""
+        """Busca médicos, pacientes E consultas juntos, numa única ida à
+        nuvem, em vez de duas chamadas separadas (uma pra médico/paciente
+        no __init__, outra pra consultas dentro de render()). Isso evita
+        dois ciclos de loading consecutivos só pra abrir a tela.
+
+        Depois desta primeira carga, render() continua funcionando como
+        antes (busca consultas de novo via run_async) para as navegações
+        de data seguintes — aqui só evitamos repetir a ida à nuvem na
+        abertura inicial, já que os dados já vieram juntos."""
 
         def _tarefa():
             inicio = time.time()
             dados_medico = self.consulta_controller.lista_medico()
             dados_paciente = self.consulta_controller.lista_paciente()
+            consultas = self.consulta_controller.listar()
             print(dados_medico)
-            print(f"Tempo de carregamento inicial (médicos + pacientes): {time.time() - inicio:.2f}s")
-            return dados_medico, dados_paciente
+            print(f"Tempo de carregamento inicial (médicos + pacientes + consultas): {time.time() - inicio:.2f}s")
+            return dados_medico, dados_paciente, consultas
 
         def _ao_concluir(resultado):
-            self.dados_medico, self.dados_paciente = resultado
+            self.dados_medico, self.dados_paciente, self.consultas = resultado
             for medico in self.dados_medico:
                 self.medicos.append(medico['nome'])
-            self.render()
+
+            self.update_data()
+            self._renderizar_consultas_do_dia()
 
         def _ao_erro(erro):
             messagebox.showerror(
                 "Erro ao carregar agenda",
-                f"Não foi possível carregar médicos e pacientes.\nDetalhe: {erro}",
+                f"Não foi possível carregar a agenda.\nDetalhe: {erro}",
             )
 
         self.loading.run_async(
@@ -335,46 +328,54 @@ class AgendaView(ctk.CTkFrame):
     # LISTAGEM / CARDS
     # ──────────────────────────────────────────────────────────────────
 
-# listar consultas
-
-    def render(self):
+    def _renderizar_consultas_do_dia(self):
+        """Desenha os cards a partir de self.consultas (já em memória),
+        sem ir à rede. Usado tanto pela carga inicial (_carregar_dados_iniciais)
+        quanto pelo final de render() (depois que a busca assíncrona volta)."""
         inicio = time.time()
         for w in self.lista.winfo_children():
             w.destroy()
 
         data = self.data_atual.strftime("%d/%m/%Y")
 
-        # ------------------------------------------------------------------
-        # ANTES: "self.consultas = self.consulta_controller.listar()"
-        # rodava direto aqui, travando a tela a cada troca de dia/render.
-        #
-        # AGORA: mesma chamada, em thread separada via run_async. O
-        # filtro por data e a ordenação por hora continuam idênticos, só
-        # que dentro de _ao_concluir — junto com o print de tempo que
-        # você já tinha, mantido para você comparar o antes/depois.
-        # ------------------------------------------------------------------
+        # BACKEND: aqui é o ponto natural pra trocar por uma query filtrada
+        # e ordenada no banco, ex:
+        #   SELECT * FROM consultas WHERE data = %s ORDER BY hora ASC
+        # Por enquanto filtra e ordena em memória mesmo.
+        consultas_do_dia = [c for c in self.consultas if c["data"] == data]
+        consultas_do_dia.sort(key=lambda c: c.get("hora", ""))
+
+        if not consultas_do_dia:
+            ctk.CTkLabel(
+                self.lista,
+                text="📭 Nenhuma consulta neste dia",
+                text_color=self.text_dark,
+                font=ctk.CTkFont(size=14),
+            ).pack(pady=50)
+        else:
+            for c in consultas_do_dia:
+                self.card(c)
+
+        print("render:", time.time() - inicio)
+
+    def render(self):
+        """Filtra e redesenha a partir de self.consultas, que já está em
+        memória — SEM ir ao banco. Usado pela navegação de data (avancar/
+        voltar/ir_hoje/ir_data), que só precisa re-filtrar o que já foi
+        carregado, sem precisar de uma nova ida à nuvem a cada troca de dia.
+
+        Para os casos que precisam de dados atualizados do banco (depois
+        de salvar/editar uma consulta), use _recarregar_e_renderizar()."""
+        self._renderizar_consultas_do_dia()
+
+    def _recarregar_e_renderizar(self):
+        """Busca a lista de consultas atualizada no banco (via run_async)
+        e, ao concluir, redesenha a tela. Usado só depois de salvar ou
+        editar uma consulta, onde self.consultas em memória ficaria
+        desatualizado em relação ao que o controller acabou de gravar."""
         def _ao_concluir(consultas):
             self.consultas = consultas
-
-            # BACKEND: aqui é o ponto natural pra trocar por uma query filtrada
-            # e ordenada no banco, ex:
-            #   SELECT * FROM consultas WHERE data = %s ORDER BY hora ASC
-            # Por enquanto filtra e ordena em memória mesmo.
-            consultas_do_dia = [c for c in self.consultas if c["data"] == data]
-            consultas_do_dia.sort(key=lambda c: c.get("hora", ""))
-
-            if not consultas_do_dia:
-                ctk.CTkLabel(
-                    self.lista,
-                    text="📭 Nenhuma consulta neste dia",
-                    text_color=self.text_dark,
-                    font=ctk.CTkFont(size=14),
-                ).pack(pady=50)
-            else:
-                for c in consultas_do_dia:
-                    self.card(c)
-
-            print("render:", time.time() - inicio)
+            self._renderizar_consultas_do_dia()
 
         def _ao_erro(erro):
             messagebox.showerror(
@@ -828,7 +829,7 @@ class AgendaView(ctk.CTkFrame):
                             )
 
                     self.update_data()
-                    self.render()
+                    self._recarregar_e_renderizar()
                     print("salvar:", time.time() - inicio)
                     popup.destroy()
 
@@ -858,7 +859,7 @@ class AgendaView(ctk.CTkFrame):
                             )
 
                     self.update_data()
-                    self.render()
+                    self._recarregar_e_renderizar()
                     print("salvar:", time.time() - inicio)
                     popup.destroy()
 
