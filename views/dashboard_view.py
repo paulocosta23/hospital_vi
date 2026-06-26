@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from .theme import get_color
+from controllers.medico_controller import buscar_por_usuario
 from views.agenda_view import AgendaView
 from views.patients_view import PatientsView
 from views.doctor_view import DoctorView
@@ -27,7 +28,7 @@ class DashboardView(ctk.CTkFrame):
         self.botao_ativo = None
         self.modo       = "Dark"
         self.btn_sair   = None
-
+        print(self.usuario)
         # Estado da sidebar: "full" | "compact" | "mini"
         self._sidebar_state = "full"
 
@@ -35,6 +36,15 @@ class DashboardView(ctk.CTkFrame):
         self.SIDEBAR_FULL    = 230
         self.SIDEBAR_COMPACT = 160
         self.SIDEBAR_MINI    = 64
+
+        # ------------------------------------------------------------------
+        # Guarda qual método (show_agenda, show_atendimentos, etc) abriu a
+        # tela de conteúdo atualmente visível. Usado em atualizar_cores()
+        # para recarregar a MESMA tela após uma troca de tema, em vez de
+        # só recarregar a tela de welcome quando nenhum botão está ativo.
+        # Cada show_* abaixo atualiza este atributo antes de montar a tela.
+        # ------------------------------------------------------------------
+        self.tela_atual_callback = None
 
         self._build_ui()
 
@@ -134,6 +144,8 @@ class DashboardView(ctk.CTkFrame):
         self.divisor_topo = ctk.CTkFrame(self.sidebar, height=1, fg_color=get_color("border"))
         self.divisor_topo.pack(fill="x", padx=12, pady=(12, 10))
 
+        id_usuario = self.usuario[2]
+        print(id_usuario)
         # ── Itens de menu ────────────────────────────
         if tipo == "atendente":
             menu_items = [
@@ -141,11 +153,16 @@ class DashboardView(ctk.CTkFrame):
                 ("👥", "Pacientes",     self.show_pacientes),
             ]
         elif tipo == "medico":
+
             menu_items = [
                 ("📅", "Minha agenda",  self.show_agenda),
                 ("🩺", "Atendimentos",  self.show_atendimentos),
                 ("📊", "Relatórios",    self.show_relatorios),
             ]
+            dados_medico_logado = buscar_por_usuario(id_usuario=id_usuario)
+            print(dados_medico_logado)
+            self.id_medico_logado = dados_medico_logado[0]
+            self.nome_medico_logado = dados_medico_logado[1]
         else:
             menu_items = [
                 ("📅", "Agenda",        self.show_agenda),
@@ -376,6 +393,7 @@ class DashboardView(ctk.CTkFrame):
             widget.destroy()
 
     def show_welcome(self):
+        self.tela_atual_callback = self.show_welcome
         self.clear()
 
         card = ctk.CTkFrame(
@@ -426,22 +444,27 @@ class DashboardView(ctk.CTkFrame):
         ).pack()
 
     def show_agenda(self):
+        self.tela_atual_callback = self.show_agenda
         self.clear()
         AgendaView(self.content)
 
     def show_pacientes(self):
+        self.tela_atual_callback = self.show_pacientes
         self.clear()
         PatientsView(self.content)
 
     def show_atendimentos(self):
+        self.tela_atual_callback = self.show_atendimentos
         self.clear()
-        DoctorView(self.content)
+        DoctorView(self.content, id_medico=self.id_medico_logado,nome_medico=self.nome_medico_logado)
 
     def show_relatorios(self):
+        self.tela_atual_callback = self.show_relatorios
         self.clear()
         ReportsView(self.content)
 
     def show_configuracoes(self):
+        self.tela_atual_callback = self.show_configuracoes
         self.clear()
         ConfiguracoesView(self.content)
 
@@ -463,6 +486,19 @@ class DashboardView(ctk.CTkFrame):
         # Reconstrói sidebar para refletir novas cores
         self._build_sidebar()
 
-        # Recarrega a tela atual (welcome ou a view ativa)
-        if self.botao_ativo is None:
+        # ------------------------------------------------------------------
+        # ANTES: só recarregava a tela de welcome quando self.botao_ativo
+        # era None — ou seja, qualquer outra tela aberta (Agenda, Doctor,
+        # etc) nunca era recarregada após a troca de tema, ficando com
+        # cores antigas até o usuário trocar de tela manualmente.
+        #
+        # AGORA: chama de volta o mesmo método que abriu a tela atual
+        # (guardado em self.tela_atual_callback por cada show_*), igual
+        # ao que já acontece quando o usuário clica manualmente no menu.
+        # Fallback para show_welcome caso, por algum motivo, nenhuma tela
+        # tenha sido aberta ainda.
+        # ------------------------------------------------------------------
+        if self.tela_atual_callback:
+            self.tela_atual_callback()
+        else:
             self.show_welcome()

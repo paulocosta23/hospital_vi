@@ -808,6 +808,7 @@ class AgendaView(ctk.CTkFrame):
                         id_consulta=consulta["id_consulta"],
                         data_consulta=data_formatada,
                         hora_consulta=hora_consulta,
+                        status_consulta=status_consulta,
                         tipo_atendimento=tipo_atendimento,
                         id_medico=id_medico,
                         arquivos_pdf=anexos,
@@ -838,6 +839,7 @@ class AgendaView(ctk.CTkFrame):
                     return self.consulta_controller.salvar(
                         data_consulta=data_formatada,
                         hora_consulta=hora_consulta,
+                        status_consulta=status_consulta,
                         tipo_atendimento=tipo_atendimento,
                         id_paciente=id_paciente,
                         id_medico=id_medico,

@@ -13,11 +13,13 @@ class ConsultaContrroler():
     def salvar(self,
             data_consulta,
             hora_consulta,
+            status_consulta,
             tipo_atendimento,
             id_paciente,
             id_medico, arquivos_pdf):
         id_consulta = consulta_model.inserir(data_consulta,
             hora_consulta,
+            status_consulta,
             tipo_atendimento,
             id_paciente,
             id_medico)
@@ -80,6 +82,7 @@ class ConsultaContrroler():
                id_consulta,
                data_consulta,
                hora_consulta,
+               status_consulta,
                tipo_atendimento,
                id_medico,
                arquivos_pdf,
@@ -88,6 +91,7 @@ class ConsultaContrroler():
         consulta_model.editar(id_consulta=id_consulta,
                               data=data_consulta,
                               hora=hora_consulta,
+                              status_consulta=status_consulta,
                               tipo_atendimento=tipo_atendimento,
                               id_medico=id_medico)
         
@@ -150,3 +154,5 @@ class ConsultaContrroler():
 
     def baixar_anexo(self, caminho_storage):
         return self.storage.baixar_pdf(caminho_storage)
+    
+

@@ -5,7 +5,7 @@ from .loading_overlay import LoadingOverlay
 # ─────────────────────────────────────────────────────────────────────────────
 # BACK-END 
 from controllers.usuario_controller     import adicionar as salvar_usuario, listar as listar_usuarios, editar as editar_usuario, remover as remover_usuario
-from controllers.medico_controller import salvar as salvar_medico, listar as listar_medico, lista_consultorios, atualizar as atualizar_medico, remover as remover_medico
+from controllers.medico_controller import salvar as salvar_medico, listar as listar_medico, lista_consultorios, atualizar as atualizar_medico, remover as remover_medico, vincular_medico_usuario
 from controllers.plano_controller       import adicionar as salvar_plano, listar as listar_planos, editar as editar_planos, remover as remover_plano
 from controllers.consultorio_controller import salvar as salvar_consultorio, listar as listar_consultorios, atualizar as editar_consutorio, remover as remover_consultorio
 # ─────────────────────────────────────────────────────────────────────────────
@@ -359,22 +359,36 @@ class AbaUsuarios(ctk.CTkFrame):
         def salvar(dados):
 
             # ── BACK ──────────────────────────────────────────────────────
-            # ANTES: salvar_usuario(_dados) rodava direto aqui.
-            # AGORA: mesma chamada, envolvida em run_async.
             nome = dados['nome']
             cpf = dados['cpf']
             login = dados['login']
             tipo = dados['tipo']
             senha = dados['senha']
+            id_medico_selecionado = dados.get('id_medico_selecionado')
             _dados = (nome, cpf, login, tipo, senha)
 
+            # ------------------------------------------------------------
+            # Salva o usuário e, se for do tipo "medico" com um médico
+            # selecionado, encadeia o vínculo na mesma operação assíncrona:
+            # salvar_usuario precisa RETORNAR o id_usuario recém-criado
+            # para que vincular_medico_usuario(id_medico, id_usuario)
+            # saiba a quem vincular. As duas chamadas rodam na mesma
+            # thread em segundo plano — só uma exibição de loading do
+            # início ao fim das duas.
+            # ------------------------------------------------------------
+            def _tarefa():
+                novo_id_usuario = salvar_usuario(_dados)
+                print("DEBUG -> novo_id_usuario:", novo_id_usuario, "| id_medico_selecionado:", id_medico_selecionado)
+                if id_medico_selecionado is not None:
+                    vincular_medico_usuario(id_medico=id_medico_selecionado, id_usuario=novo_id_usuario)
+                    print("DEBUG -> vincular_medico_usuario executado SEM erro")
+                return novo_id_usuario
+
             def _ao_erro(erro):
-                # _abrir_popup já foi fechado neste ponto (fluxo original
-                # fechava antes de chamar on_salvar); erro é só registrado.
                 print("Erro ao salvar usuário:", erro)
 
             self.loading.run_async(
-                tarefa=lambda: salvar_usuario(_dados),
+                tarefa=_tarefa,
                 ao_concluir=lambda resultado: self._render(),
                 ao_erro=_ao_erro,
                 mensagem="Salvando usuário...",
@@ -393,13 +407,22 @@ class AbaUsuarios(ctk.CTkFrame):
             login = dados['login']
             tipo = dados['tipo']
             senha = dados['senha']
+            id_medico_selecionado = dados.get('id_medico_selecionado')
             _dados = (nome, cpf, login, tipo, senha)
+
+            # Edição: id_usuario já existe, então o vínculo (se aplicável)
+            # roda na sequência, sem precisar de retorno do editar_usuario.
+            def _tarefa():
+                resultado = editar_usuario(id_usuario, _dados)
+                if id_medico_selecionado is not None:
+                    vincular_medico_usuario(id_medico_selecionado, id_usuario)
+                return resultado
 
             def _ao_erro(erro):
                 print("Erro ao editar usuário:", erro)
 
             self.loading.run_async(
-                tarefa=lambda: editar_usuario(id_usuario, _dados),
+                tarefa=_tarefa,
                 ao_concluir=lambda resultado: self._render(),
                 ao_erro=_ao_erro,
                 mensagem="Salvando usuário...",
@@ -425,7 +448,7 @@ class AbaUsuarios(ctk.CTkFrame):
     def _abrir_popup(self, usuario, on_salvar):
         popup = ctk.CTkToplevel(self)
         popup.title("Novo Usuário" if not usuario else "Editar Usuário")
-        popup.geometry("420x580")
+        popup.geometry("420x640")
         popup.resizable(False, False)
         popup.grab_set()
         popup.configure(fg_color=self._panel)
@@ -456,8 +479,116 @@ class AbaUsuarios(ctk.CTkFrame):
 
         _secao(frame, "Acesso", self._muted)
         login_e = _campo(frame, "Login *", "usuario.login", self._muted)
+
+        # Se o usuário editado já é do tipo "medico", o campo Tipo fica
+        # travado — não dá pra trocar o tipo de um médico já vinculado
+        # por aqui, pra não deixar um médico "pendurado" sem login ou um
+        # vínculo apontando para um tipo que não existe mais. A única
+        # forma de mudar isso seria uma ação administrativa separada,
+        # fora desta tela.
+        tipo_ja_e_medico = bool(usuario) and usuario.get("tipo") == "medico"
+
         tipo_var = ctk.StringVar(value=TIPOS_USUARIO[0])
-        _select(frame, "Tipo *", TIPOS_USUARIO, tipo_var, self._muted)
+        tipo_menu = _select(frame, "Tipo *", TIPOS_USUARIO, tipo_var, self._muted)
+        if tipo_ja_e_medico:
+            tipo_menu.configure(state="disabled")
+            ctk.CTkLabel(
+                frame, text="Tipo 'medico' não pode ser alterado por aqui.",
+                font=ctk.CTkFont(size=11), text_color=self._muted,
+            ).pack(anchor="w")
+
+        # ---- Vínculo com médico (aparece só quando Tipo = medico) ----------
+        secao_medico_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        medico_var = ctk.StringVar(value="")
+        medico_menu = None
+        label_medico_erro = None
+
+        # id_medico do médico atualmente vinculado a este usuário (edição).
+        # Descoberto dentro da própria lista de médicos (filtrando por
+        # id_usuario == usuario["id_usuario"]) quando ela chegar do
+        # backend — não depende de nenhum campo extra em listar_usuarios().
+        id_medico_vinculado_atual = None
+
+        # Mapa nome_exibido -> id_medico, preenchido depois que a lista de
+        # médicos chega do backend.
+        mapa_medico_por_nome = {}
+
+        def _popular_dropdown_medicos(lista_medicos):
+            nonlocal medico_menu, label_medico_erro, id_medico_vinculado_atual
+            mapa_medico_por_nome.clear()
+
+            # Descobre, dentro da lista recebida, se algum médico já está
+            # vinculado a este usuário em edição (id_usuario == este usuário).
+            if usuario:
+                for m in lista_medicos:
+                    if m.get("id_usuario") == usuario.get("id_usuario"):
+                        id_medico_vinculado_atual = m.get("id_medico")
+                        break
+
+            # Só entram no dropdown: médicos sem usuário vinculado (livres)
+            # OU o médico que já é o vinculado deste usuário em edição
+            # (pra não "desaparecer" a seleção atual ao editar).
+            disponiveis = [
+                m for m in lista_medicos
+                if m.get("id_usuario") is None or m.get("id_medico") == id_medico_vinculado_atual
+            ]
+
+            for w in secao_medico_frame.winfo_children():
+                w.destroy()
+
+            if not disponiveis:
+                ctk.CTkLabel(
+                    secao_medico_frame,
+                    text="Nenhum médico disponível para vincular (todos já têm login).",
+                    font=ctk.CTkFont(size=12), text_color=get_color("danger"), wraplength=360,
+                ).pack(anchor="w", pady=(4, 0))
+                return
+
+            nomes = [m["nome"] for m in disponiveis]
+            for m in disponiveis:
+                mapa_medico_por_nome[m["nome"]] = m["id_medico"]
+
+            valor_inicial = nomes[0]
+            if usuario:
+                for m in disponiveis:
+                    if m.get("id_medico") == id_medico_vinculado_atual:
+                        valor_inicial = m["nome"]
+                        break
+            medico_var.set(valor_inicial)
+
+            medico_menu = _select(
+                secao_medico_frame, "Qual médico é esse? *", nomes, medico_var, self._muted,
+            )
+
+        def _atualizar_visibilidade_medico(*_):
+            if tipo_var.get() == "medico":
+                secao_medico_frame.pack(fill="x", pady=(0, 6))
+            else:
+                secao_medico_frame.pack_forget()
+
+        tipo_var.trace_add("write", _atualizar_visibilidade_medico)
+
+        # Busca a lista de médicos assim que o popup abre — precisa vir
+        # do backend (envolve rede), então roda via run_async com o
+        # loading overlay já existente nesta aba.
+        def _ao_concluir_medicos(lista_medicos):
+            _popular_dropdown_medicos(lista_medicos)
+            _atualizar_visibilidade_medico()
+
+        def _ao_erro_medicos(erro):
+            ctk.CTkLabel(
+                secao_medico_frame,
+                text=f"Erro ao carregar médicos: {erro}",
+                font=ctk.CTkFont(size=12), text_color=get_color("danger"), wraplength=360,
+            ).pack(anchor="w")
+            _atualizar_visibilidade_medico()
+
+        self.loading.run_async(
+            tarefa=listar_medico,
+            ao_concluir=_ao_concluir_medicos,
+            ao_erro=_ao_erro_medicos,
+            mensagem="Carregando médicos...",
+        )
 
         _secao(frame, "Senha", self._muted)
         senha_e    = _campo(frame, "Senha *", "••••••••", self._muted)
@@ -491,11 +622,22 @@ class AbaUsuarios(ctk.CTkFrame):
             if not cpf: erro.configure(text="⚠  CPF é obrigatório."); return
             if not usuario and not senha: erro.configure(text="⚠  Senha é obrigatória."); return
             if senha and senha != conf:   erro.configure(text="⚠  As senhas não coincidem."); return
+
+            tipo_escolhido = tipo_var.get()
+            id_medico_selecionado = None
+            if tipo_escolhido == "medico":
+                nome_medico_escolhido = medico_var.get()
+                id_medico_selecionado = mapa_medico_por_nome.get(nome_medico_escolhido)
+                if id_medico_selecionado is None:
+                    erro.configure(text="⚠  Selecione qual médico é este usuário.")
+                    return
+
             dados = {
                 "nome":  nome,
                 "cpf": cpf,
                 "login": login,
-                "tipo":  tipo_var.get(),
+                "tipo":  tipo_escolhido,
+                "id_medico_selecionado": id_medico_selecionado,
             }
             if senha:
                 dados["senha"] = senha   # hash no back-end
@@ -577,6 +719,12 @@ class AbaMedicos(ctk.CTkFrame):
         self._panel = panel
         self._muted = muted
         self.medicos: list[dict] = []
+        # Lista de consultórios carregada uma única vez (junto com a
+        # listagem inicial de médicos), e reaproveitada em memória no
+        # popup de salvar/editar — sem nova ida à rede a cada vez que o
+        # popup é aberto ou salvo, igual ao padrão já usado na AgendaView
+        # com dados_medico/dados_paciente.
+        self.consultorios_disponiveis: list[dict] = []
         self._popup_aberto = False
         self._filtro = ""
         self._build()
@@ -620,7 +768,39 @@ class AbaMedicos(ctk.CTkFrame):
         # Overlay de loading desta aba (mesma observação da AbaUsuarios).
         self.loading = LoadingOverlay(self)
 
-        self._render()
+        self._carregar_dados_iniciais()
+
+    def _carregar_dados_iniciais(self):
+        """Busca médicos E consultórios juntos, numa única ida à nuvem,
+        na abertura da aba. self.consultorios_disponiveis fica em memória
+        e é reaproveitada no popup de salvar/editar médico — sem precisar
+        buscar de novo a cada vez que o popup abre ou salva."""
+
+        def _tarefa():
+            medicos = listar_medico()
+            consultorios = lista_consultorios()
+            return medicos, consultorios
+
+        def _ao_concluir(resultado):
+            medicos, consultorios = resultado
+            self.consultorios_disponiveis = consultorios
+            self._aplicar_lista_medicos(medicos)
+
+        def _ao_erro(erro):
+            self._lbl_cont.configure(text="Erro ao carregar médicos")
+            f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+            ctk.CTkLabel(f, text="⚠️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(
+                f, text=f"Não foi possível carregar os médicos.\n{erro}",
+                font=ctk.CTkFont(size=13), text_color=get_color("danger"),
+            ).pack(pady=(8, 4))
+
+        self.loading.run_async(
+            tarefa=_tarefa,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando médicos...",
+        )
 
     def _filtrar(self):
         self._filtro = self._busca.get().strip().lower(); self._render()
@@ -629,35 +809,16 @@ class AbaMedicos(ctk.CTkFrame):
         self._filtro = ""; self._busca.delete(0, "end"); self._render()
 
     def _render(self):
+        """Busca médicos atualizados no banco (consultórios continuam só
+        em memória, não são buscados de novo aqui) — usado em filtro,
+        limpar busca, e depois de salvar/editar/remover médico."""
         for w in self._lista.winfo_children():
             w.destroy()
 
-        # ------------------------------------------------------------------
-        # ANTES: "self.medicos = listar_medico()" + print(...) rodava
-        # direto aqui, travando a tela.
-        # AGORA: mesma chamada, em thread separada. O print de debug
-        # foi mantido, só passou para dentro de _ao_concluir.
-        # ------------------------------------------------------------------
         def _ao_concluir(medicos):
             self.medicos = medicos
             print(self.medicos)
-
-            items = (
-                [m for m in self.medicos if self._filtro in m["nome"].lower()]
-                if self._filtro else self.medicos
-            )
-            total = len(items)
-            self._lbl_cont.configure(
-                text=f"{total} médico{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
-            )
-            if not items:
-                f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
-                ctk.CTkLabel(f, text="👨‍⚕️", font=ctk.CTkFont(size=40)).pack()
-                ctk.CTkLabel(f, text="Nenhum médico cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
-                ctk.CTkLabel(f, text="Clique em '＋ Novo Médico' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
-                return
-            for m in items:
-                _CardMedico(self._lista, m, lambda m=m: self._editar(m), lambda m=m: self._remover(m))
+            self._aplicar_lista_medicos(medicos)
 
         def _ao_erro(erro):
             self._lbl_cont.configure(text="Erro ao carregar médicos")
@@ -674,6 +835,30 @@ class AbaMedicos(ctk.CTkFrame):
             ao_erro=_ao_erro,
             mensagem="Carregando médicos...",
         )
+
+    def _aplicar_lista_medicos(self, medicos):
+        """Filtra pelo termo de busca e desenha os cards. Separado de
+        _render()/_carregar_dados_iniciais() porque os dois precisam
+        terminar com o mesmo resultado visual, vindo de caminhos
+        diferentes (com ou sem busca de consultórios)."""
+        self.medicos = medicos
+
+        items = (
+            [m for m in self.medicos if self._filtro in m["nome"].lower()]
+            if self._filtro else self.medicos
+        )
+        total = len(items)
+        self._lbl_cont.configure(
+            text=f"{total} médico{'s' if total != 1 else ''} encontrado{'s' if total != 1 else ''}"
+        )
+        if not items:
+            f = ctk.CTkFrame(self._lista, fg_color="transparent"); f.pack(pady=60)
+            ctk.CTkLabel(f, text="👨‍⚕️", font=ctk.CTkFont(size=40)).pack()
+            ctk.CTkLabel(f, text="Nenhum médico cadastrado", font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(8, 4))
+            ctk.CTkLabel(f, text="Clique em '＋ Novo Médico' para cadastrar.", font=ctk.CTkFont(size=13), text_color=self._muted).pack()
+            return
+        for m in items:
+            _CardMedico(self._lista, m, lambda m=m: self._editar(m), lambda m=m: self._remover(m))
 
     def _novo(self):
         if self._popup_aberto: return
@@ -775,29 +960,24 @@ class AbaMedicos(ctk.CTkFrame):
         _select(frame, "Status", STATUS_OPTS, status_var, self._muted)
 
         if medico:
-            nome_e.insert(0, medico.get("nome", ""))
-            esp_var.set(medico.get("especialidade", ESPECIALIDADES[0]))
-            crm_e.insert(0, medico.get("crm", ""))
-            cons_e.insert(0, medico.get("consultorio", ""))
-            status_var.set(medico.get("status", "Ativo"))
+            nome_e.insert(0, str(medico.get("nome") or ""))
+            esp_var.set(medico.get("especialidade") or ESPECIALIDADES[0])
+            crm_e.insert(0, str(medico.get("crm") or ""))
+            # "consultorio" pode vir como int (número) ou None do banco —
+            # CTkEntry.insert exige string, então converte explicitamente
+            # antes de inserir. Sem isso, médico sem consultório vinculado
+            # (valor None) ou número puro quebra com TclError.
+            cons_e.insert(0, str(medico.get("consultorio")) if medico.get("consultorio") is not None else "")
+            status_var.set(medico.get("status") or "Ativo")
 
         erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack(pady=(8, 0))
 
         def _salvar():
-
-            # ------------------------------------------------------------
-            # ANTES: "consultorios = lista_consultorios()" rodava direto
-            # aqui (chamada síncrona), travando a janela do popup antes
-            # mesmo de validar os campos.
-            #
-            # AGORA: validação local dos campos roda primeiro (rápida,
-            # não depende de rede). Só DEPOIS dos campos serem válidos é
-            # que disparamos a chamada de rede (lista_consultorios) via
-            # run_async, e dentro do callback resolvemos o id_consultorio
-            # e finalmente chamamos on_salvar — preservando a mesma ordem
-            # de validações que o código original tinha.
-            # ------------------------------------------------------------
+            # Validação dos campos + resolução do id_consultorio a partir
+            # da lista já carregada em memória (self.consultorios_disponiveis),
+            # buscada uma única vez no início da aba — sem nova chamada de
+            # rede aqui, igual à regra original do seu backend.
             try:
                 cons = int(cons_e.get())
                 nome = nome_e.get().strip(); crm = crm_e.get().strip()
@@ -808,30 +988,21 @@ class AbaMedicos(ctk.CTkFrame):
             if not nome: erro.configure(text="⚠  Nome é obrigatório."); return
             if not crm:  erro.configure(text="⚠  CRM é obrigatório."); return
 
-            def _ao_concluir_consultorios(consultorios):
-                id_consultorio = None
-                for consultorio in consultorios:
-                    if consultorio['numero'] == cons:
-                        id_consultorio = consultorio['id_consultorio']
-                if id_consultorio is None:
-                    erro.configure(text="⚠ Consultório não encontrado")
-                    return
+            id_consultorio = None
+            for consultorio in self.consultorios_disponiveis:
+                if consultorio['numero'] == cons:
+                    id_consultorio = consultorio['id_consultorio']
+                    break
+            if id_consultorio is None:
+                erro.configure(text="⚠ Consultório não encontrado")
+                return
 
-                dados = {
-                    "nome": nome, "especialidade": esp_var.get(),
-                    "crm": crm, "id_consultorio": id_consultorio, "status": status_var.get(),
-                }
-                on_salvar(dados); _fechar()
-
-            def _ao_erro_consultorios(e):
-                erro.configure(text=f"⚠ Erro ao verificar consultório: {e}")
-
-            self.loading.run_async(
-                tarefa=lista_consultorios,
-                ao_concluir=_ao_concluir_consultorios,
-                ao_erro=_ao_erro_consultorios,
-                mensagem="Verificando consultório...",
-            )
+            dados = {
+                "nome": nome, "especialidade": esp_var.get(),
+                "crm": crm, "id_consultorio": id_consultorio, "status": status_var.get(),
+            }
+            on_salvar(dados)
+            _fechar()
 
         ctk.CTkButton(
             frame, text="Salvar",
@@ -1249,9 +1420,13 @@ class AbaConsultorios(ctk.CTkFrame):
         _select(frame, "Status", _STATUS_CONS, status_var, self._muted)
 
         if cons:
-            num_e.insert(0, cons.get("numero", ""))
-            andar_e.insert(0, cons.get("andar", ""))
-            status_var.set(cons.get("status", "Disponível"))
+            # "numero" e "andar" vêm como int do banco — mesma correção
+            # aplicada na AbaMedicos para o campo "consultorio": converter
+            # explicitamente pra string antes de inserir, senão quebra
+            # com TclError no CTkEntry.insert.
+            num_e.insert(0, str(cons.get("numero")) if cons.get("numero") is not None else "")
+            andar_e.insert(0, str(cons.get("andar")) if cons.get("andar") is not None else "")
+            status_var.set(cons.get("status") or "Disponível")
 
         erro = ctk.CTkLabel(frame, text="", text_color=get_color("danger"))
         erro.pack(pady=(8, 0))

@@ -4,7 +4,7 @@ def login(username, senha):
     return usuario_model.autenticar(username, senha)
 
 def adicionar(_dados):
-    usuario_model.inserir(_dados)
+    return usuario_model.inserir(_dados)
 
 def remover(id_usuario):
     usuario_model.remover(id_usuario)

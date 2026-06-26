@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from datetime import datetime, timedelta
+from controllers.atendimentos_controller import AtendimentosContrroler
 from tkinter import filedialog, messagebox
 import os
 from .theme import get_color
@@ -92,13 +93,15 @@ def _dados_ficticios():
         ],
     }
 
-    return consultas, atendimentos, historico
+    return atendimentos, historico
 
 
 class DoctorView(ctk.CTkFrame):
-    def __init__(self, master, id_medico=1, nome_medico="Dr. Carlos"):
+    def __init__(self, master, id_medico, nome_medico):
         super().__init__(master)
         self.pack(fill="both", expand=True)
+
+        self.atendimento_controller = AtendimentosContrroler()
 
         self.bg = get_color("bg")
         self.panel = get_color("panel")
@@ -112,11 +115,15 @@ class DoctorView(ctk.CTkFrame):
 
         self.id_medico = id_medico
         self.nome_medico = nome_medico
+        self.consultas_por_medico_logado = []
+        self.consultas_por_medico_logado = self.atendimento_controller.listar_consultas_por_medico(self.id_medico)
+        print(self.id_medico)
+        print(self.nome_medico)
 
         self.data_atual = datetime.now()
 
         # ---- DADOS FICTÍCIOS EM MEMÓRIA (trocar por chamadas reais depois) --
-        self.todas_consultas, self.atendimentos_salvos, self.historico_pacientes = _dados_ficticios()
+        self.atendimentos_salvos, self.historico_pacientes = _dados_ficticios()
 
         self._montar_lista()
 
@@ -233,7 +240,7 @@ class DoctorView(ctk.CTkFrame):
 
         # FICTÍCIO: filtra a lista em memória pela data.
         # BACKEND (depois): listar_consultas_por_data(id_medico, data_str)
-        consultas_do_dia = [c for c in self.todas_consultas if c["data"] == data_str]
+        consultas_do_dia = [c for c in self.consultas_por_medico_logado if c["data"] == data_str]
 
         total = len(consultas_do_dia)
         if total == 0:
@@ -380,13 +387,11 @@ class DoctorView(ctk.CTkFrame):
         self.anexos_frame.pack(fill="x", pady=(0, 5))
         self._redesenhar_anexos_atendimento(consulta, somente_leitura)
 
-        if not somente_leitura:
-            ctk.CTkButton(
-                scroll, text="+ Anexar PDF", height=32,
-                command=lambda: self._adicionar_anexo_atendimento(consulta),
-            ).pack(fill="x", pady=(0, 18))
-        else:
-            ctk.CTkFrame(scroll, fg_color="transparent", height=10).pack()
+        # O médico só pode visualizar (abrir) e excluir anexos já
+        # existentes — não pode adicionar novos por aqui. O anexo de uma
+        # consulta é gerenciado na Agenda (recepção), não na tela do
+        # médico. Mantém só o espaçador visual, igual ao modo leitura.
+        ctk.CTkFrame(scroll, fg_color="transparent", height=10).pack()
 
         ctk.CTkLabel(
             scroll, text="📝 Atendimento",
@@ -401,7 +406,8 @@ class DoctorView(ctk.CTkFrame):
 
         # FICTÍCIO: busca no dict em memória pelo id_consulta.
         # BACKEND (depois): buscar_atendimento(id_consulta) -> dict | None
-        atendimento_existente = self.atendimentos_salvos.get(consulta["id_consulta"])
+        atendimento_existente = self.atendimento_controller.atendimentos_salvos(consulta["id_consulta"])
+        print(atendimento_existente)
         if atendimento_existente:
             campo_queixa.insert("1.0", atendimento_existente.get("queixa", ""))
             campo_observacoes.insert("1.0", atendimento_existente.get("observacoes", ""))
@@ -426,18 +432,27 @@ class DoctorView(ctk.CTkFrame):
             return
 
         def salvar():
-            dados = {
-                "queixa": campo_queixa.get("1.0", "end").strip(),
-                "observacoes": campo_observacoes.get("1.0", "end").strip(),
-                "diagnostico": campo_diagnostico.get("1.0", "end").strip(),
-                "receita": campo_receita.get("1.0", "end").strip(),
-                "exames": campo_exames.get("1.0", "end").strip(),
-            }
+           
+            
+        
+            queixa = campo_queixa.get("1.0", "end").strip() or "Não Adicionado"
+            observacoes = campo_observacoes.get("1.0", "end").strip() or "Não Adicionado"
+            diagnostico =  campo_diagnostico.get("1.0", "end").strip() or "Não Adicionado"
+            medicacao = campo_receita.get("1.0", "end").strip() or "Não Adicionado"
+            exames = campo_exames.get("1.0", "end").strip() or "Não Adicionado"
+            id_consulta = consulta["id_consulta"]
+            id_medico = consulta["id_medico"]
+            id_paciente = consulta["id_paciente"]
+            print(id_paciente)
+
+            self.atendimento_controller.salvar_prontuario(queixa, observacoes, diagnostico, medicacao, exames, id_consulta, id_medico, id_paciente)
+            
+            status = "Atendido"
+            self.atendimento_controller.atualizar_status(id_consulta, status)
 
             # FICTÍCIO: salva no dict em memória e marca status como Atendido.
             # BACKEND (depois): salvar_atendimento(id_consulta, dados)
-            self.atendimentos_salvos[consulta["id_consulta"]] = dados
-            consulta["status"] = "Atendido"
+            
 
             messagebox.showinfo("Sucesso", "Atendimento salvo com sucesso.")
             self._montar_lista()
@@ -539,16 +554,13 @@ class DoctorView(ctk.CTkFrame):
         # BACKEND (depois): se vier de storage, baixar_anexo(caminho_storage)
         # roda via run_async; se já tiver caminho local, abre direto com
         # self._abrir_arquivo(caminho).
-        if anexo.get("caminho") and os.path.exists(anexo["caminho"]):
-            try:
-                self._abrir_arquivo(anexo["caminho"])
-            except Exception as e:
-                messagebox.showerror("ERRO", str(e))
-        else:
-            messagebox.showinfo(
-                "Simulação",
-                f"(Fictício) Aqui abriria: {anexo.get('nome_original', '')}",
-            )
+        try:
+            caminho = self.atendimento_controller.baixar_anexo(anexo["caminho_storage"])
+
+            self._abrir_arquivo(caminho)
+        except Exception as e:
+            messagebox.showerror("Erro ao abrir documento", str(e))
+        
 
     def _excluir_anexo_atendimento(self, anexo, consulta):
         confirmar = messagebox.askyesno(
@@ -558,36 +570,14 @@ class DoctorView(ctk.CTkFrame):
         if not confirmar:
             return
 
-        # FICTÍCIO: remove só da lista em memória.
-        # BACKEND (depois): excluir_anexo(id_documento) antes de remover
-        # da lista local, se o anexo já tiver id_documento (já persistido).
-        self.anexos_atendimento.remove(anexo)
-        self._redesenhar_anexos_atendimento(consulta)
-
-    def _adicionar_anexo_atendimento(self, consulta):
-        arq = filedialog.askopenfilename(title="Selecionar PDF", filetypes=[("Arquivos PDF", "*.pdf")])
-        if not arq:
-            return
-
-        nome_arquivo = os.path.basename(arq)
-        ja_existe = any(
-            a.get("nome_original", "").lower() == nome_arquivo.lower()
-            for a in self.anexos_atendimento
-        )
-        if ja_existe:
-            messagebox.showwarning(
-                "Arquivo já anexado",
-                f"O arquivo \"{nome_arquivo}\" já está anexado a esta consulta.",
-            )
-            return
-
-        self.anexos_atendimento.append({
-            "nome_original": nome_arquivo,
-            "caminho": arq,
-            "caminho_storage": None,
-            "id_documento": None,
-        })
-        self._redesenhar_anexos_atendimento(consulta)
+        try:
+            self.atendimento_controller.excluir_anexo(id_documento=anexo["id_documento"],
+                                                      caminho_storage=anexo["caminho_storage"])
+            self.anexos_atendimento.remove(anexo)
+            consulta["anexos"] = list(self.anexos_atendimento)
+            self._redesenhar_anexos_atendimento(consulta)
+        except Exception as e:
+            messagebox.showerror("Erro ao excluir anexo", str(e))
 
     def _abrir_arquivo(self, caminho):
         if not os.path.exists(caminho):
@@ -629,7 +619,7 @@ class DoctorView(ctk.CTkFrame):
 
         # FICTÍCIO: busca no dict em memória pelo id_paciente.
         # BACKEND (depois): listar_historico_paciente(id_paciente) -> list[dict]
-        historicos = self.historico_pacientes.get(consulta["id_paciente"], [])
+        historicos = self.atendimento_controller.historico_por_paciente(consulta["id_paciente"])
 
         total = len(historicos)
         ctk.CTkLabel(

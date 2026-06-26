@@ -1,13 +1,13 @@
 from config.db import conectar
 
-def inserir(data, hora, tipo, id_paciente, id_medico):
+def inserir(data, hora, status_consulta, tipo, id_paciente, id_medico):
     conn = conectar()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO Consulta (data, hora, tipo_atendimento, id_paciente, id_medico)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (data, hora, tipo, id_paciente, id_medico))
+        INSERT INTO Consulta (data, hora, status_consulta, tipo_atendimento, id_paciente, id_medico)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (data, hora, status_consulta, tipo, id_paciente, id_medico))
 
     id_consulta = cursor.lastrowid
 
@@ -29,9 +29,10 @@ def listar(data_inicio, data_fim):
             m.nome as medico,
             DATE_FORMAT(c.data, '%%d/%%m/%%Y') as data,
             TIME_FORMAT(c.hora, '%%H:%%i') as hora,
+            c.status_consulta as status,
             c.tipo_atendimento
         FROM (
-            select id_consulta, id_paciente, id_medico, data, hora, tipo_atendimento 
+            select id_consulta, id_paciente, id_medico, data, hora, status_consulta, tipo_atendimento 
             from Consulta 	
             where data between %s and %s
         ) as c
@@ -39,7 +40,6 @@ def listar(data_inicio, data_fim):
         JOIN Medico m ON c.id_medico = m.id_medico
     """
     values = data_inicio, data_fim
-    print(sql, values)
     cursor.execute(sql, values)
 
 
@@ -48,16 +48,17 @@ def listar(data_inicio, data_fim):
     conn.close()
     return consultas
 
-def editar(id_consulta, data, hora, tipo_atendimento, id_medico):
+def editar(id_consulta, data, hora, status_consulta, tipo_atendimento, id_medico):
     conn = conectar()
     cursor = conn.cursor()
     cursor.execute("""UPDATE Consulta
                    SET data=%s,
                    hora=%s,
+                   status_consulta=%s,
                    tipo_atendimento=%s,
                    id_medico=%s
                    WHERE id_consulta=%s""",
-                   (data, hora, tipo_atendimento, id_medico, id_consulta))
+                   (data, hora, status_consulta, tipo_atendimento, id_medico, id_consulta))
     conn.commit()
     cursor.close()
     conn.close()

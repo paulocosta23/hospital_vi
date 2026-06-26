@@ -11,6 +11,7 @@ class DocumentoConsultaModel():
     ):
         conn = conectar()
         cursor = conn.cursor()
+ 
         cursor.execute("""INSERT INTO DocumentoConsulta (
                        id_consulta,
                        nome_original,
@@ -29,11 +30,8 @@ class DocumentoConsultaModel():
     def listar_todos(self):
         inicio = time.time()
         conn = conectar()
-        print("conectar:", time.time() - inicio)
-        inicio = time.time()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("""SELECT
-        
                        id_documento,
                        id_consulta,
                        nome_original,

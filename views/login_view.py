@@ -223,7 +223,8 @@ class LoginView(ctk.CTkFrame):
                 self.entry_password.focus()
 
             elif usuario:
-                self.usuario = (usuario[1], usuario[2])
+                print(usuario)
+                self.usuario = (usuario[1], usuario[2], usuario[3])
                 self.on_login(self.usuario)
 
             else:
