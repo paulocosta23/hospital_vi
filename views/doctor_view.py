@@ -5,15 +5,7 @@ from tkinter import filedialog, messagebox
 import os
 from .theme import get_color
 from .exportar_atendimento_pdf import exportar_atendimento_pdf
-
-# ─────────────────────────────────────────────────────────────────────────────
-# VERSÃO COM DADOS FICTÍCIOS (sem backend, sem loading)
-#
-# Esta versão usa listas/dicts em memória só pra você visualizar o front
-# funcionando de ponta a ponta. Quando o backend estiver pronto, me manda
-# o código que você implementou e eu troco os pontos certos por chamadas
-# reais + LoadingOverlay — igual fizemos com Agenda, Patients e Configurações.
-# ─────────────────────────────────────────────────────────────────────────────
+from .loading_overlay import LoadingOverlay
 
 
 STATUS_COLORS = {
@@ -21,79 +13,6 @@ STATUS_COLORS = {
     "Chegou": "#F59E0B",
     "Atendido": "#22C55E",
 }
-
-
-def _dados_ficticios():
-    """Gera consultas fictícias pra hoje e pra alguns outros dias, com
-    histórico de atendimentos por paciente. Só pra teste visual."""
-    hoje = datetime.now().strftime("%d/%m/%Y")
-    ontem = (datetime.now() - timedelta(days=1)).strftime("%d/%m/%Y")
-
-    consultas = [
-        {
-            "id_consulta": 1, "hora": "08:00", "paciente": "João Silva",
-            "cpf": "123.456.789-00", "id_paciente": 101, "data": hoje,
-            "status": "Agendado",
-            "anexos": [
-                {"nome_original": "exame_sangue.pdf", "caminho_storage": "fake/exame_sangue.pdf", "id_documento": 901},
-                {"nome_original": "raio_x_torax.pdf", "caminho_storage": "fake/raio_x.pdf", "id_documento": 902},
-            ],
-        },
-        {
-            "id_consulta": 2, "hora": "08:30", "paciente": "Maria Souza",
-            "cpf": "987.654.321-00", "id_paciente": 102, "data": hoje,
-            "status": "Chegou", "anexos": [],
-        },
-        {
-            "id_consulta": 3, "hora": "09:15", "paciente": "Pedro Lima",
-            "cpf": "456.789.123-00", "id_paciente": 103, "data": hoje,
-            "status": "Atendido", "anexos": [],
-        },
-        {
-            "id_consulta": 4, "hora": "10:00", "paciente": "Ana Costa",
-            "cpf": "321.654.987-00", "id_paciente": 104, "data": ontem,
-            "status": "Atendido", "anexos": [],
-        },
-    ]
-
-    # Atendimentos já salvos (simulando o que viria de buscar_atendimento)
-    atendimentos = {
-        3: {
-            "queixa": "Check-up de rotina",
-            "observacoes": "Paciente sem queixas relevantes.",
-            "diagnostico": "Sem alterações",
-            "receita": "",
-            "exames": "",
-        },
-    }
-
-    # Histórico por paciente (simulando listar_historico_paciente)
-    historico = {
-        101: [
-            {
-                "id_consulta": 50, "data": "12/05/2026", "medico": "Dr. Carlos",
-                "queixa": "Dor lombar ao se levantar, há 1 semana.",
-                "observacoes": "Paciente relata melhora ao repouso.",
-                "diagnostico": "Lombalgia mecânica leve.",
-                "receita": "Ciclobenzaprina 5mg — 1x ao dia por 5 dias.",
-                "exames": "",
-                "anexos": [
-                    {"nome_original": "receita_anterior.pdf", "caminho_storage": "fake/receita_ant.pdf", "id_documento": 800},
-                ],
-            },
-            {
-                "id_consulta": 30, "data": "02/03/2026", "medico": "Dr. Carlos",
-                "queixa": "Febre e tosse",
-                "observacoes": "Sem dificuldade respiratória.",
-                "diagnostico": "Gripe comum",
-                "receita": "Paracetamol 750mg se febre.",
-                "exames": "",
-                "anexos": [],
-            },
-        ],
-    }
-
-    return atendimentos, historico
 
 
 class DoctorView(ctk.CTkFrame):
@@ -116,16 +35,51 @@ class DoctorView(ctk.CTkFrame):
         self.id_medico = id_medico
         self.nome_medico = nome_medico
         self.consultas_por_medico_logado = []
-        self.consultas_por_medico_logado = self.atendimento_controller.listar_consultas_por_medico(self.id_medico)
-        print(self.id_medico)
-        print(self.nome_medico)
 
         self.data_atual = datetime.now()
 
-        # ---- DADOS FICTÍCIOS EM MEMÓRIA (trocar por chamadas reais depois) --
-        self.atendimentos_salvos, self.historico_pacientes = _dados_ficticios()
+        # Overlay de loading reutilizável (mesmo componente usado em
+        # Agenda/Login/Patients/Configurações). Criado antes de qualquer
+        # chamada de rede, já que a primeira busca acontece logo abaixo.
+        self.loading = LoadingOverlay(self)
 
-        self._montar_lista()
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultas_por_medico_logado = self.atendimento_
+        # controller.listar_consultas_por_medico(self.id_medico)" rodava
+        # direto aqui, travando a abertura da tela até a nuvem responder.
+        #
+        # AGORA: a estrutura visual (montada por _montar_lista, chamada
+        # dentro de _carregar_dados_iniciais) só aparece preenchida depois
+        # que a busca assíncrona retorna. _montar_lista() já cuida de
+        # desenhar o header/navegação mesmo antes dos dados chegarem,
+        # então o loading cobre só a parte de carregamento da lista.
+        # ------------------------------------------------------------------
+        self._carregar_dados_iniciais()
+
+    def _carregar_dados_iniciais(self):
+        """Busca as consultas do médico logado (uma única vez, na
+        abertura da tela) e monta a primeira renderização. Usado também
+        por _ir_hoje(), que precisa da mesma busca."""
+
+        def _ao_concluir(consultas):
+            self.consultas_por_medico_logado = consultas
+            self._montar_lista()
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar suas consultas.\nDetalhe: {erro}",
+            )
+            # Mesmo com erro, monta a estrutura da tela (lista vazia) em
+            # vez de deixar a tela completamente em branco.
+            self._montar_lista()
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.listar_consultas_por_medico(self.id_medico),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
 
     # ──────────────────────────────────────────────────────────────────
     # TELA 1: LISTA DE CONSULTAS DO DIA (COM NAVEGAÇÃO DE DATA)
@@ -218,7 +172,30 @@ class DoctorView(ctk.CTkFrame):
     def _ir_hoje(self):
         self.data_atual = datetime.now()
         self._atualizar_label_data()
-        self._renderizar_consultas()
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultas_por_medico_logado = self.atendimento_
+        # controller.listar_consultas_por_medico(self.id_medico)" rodava
+        # direto aqui, travando a tela sem feedback visual.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultas):
+            self.consultas_por_medico_logado = consultas
+            self._renderizar_consultas()
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar as consultas de hoje.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.listar_consultas_por_medico(self.id_medico),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
 
     def _ir_data(self):
         texto = self.input_data.get().strip()
@@ -228,9 +205,37 @@ class DoctorView(ctk.CTkFrame):
             messagebox.showerror("Data inválida", "Digite a data no formato dd/mm/aaaa.")
             self.input_data.focus_set()
             return
-        self.data_atual = nova_data
-        self._atualizar_label_data()
-        self._renderizar_consultas()
+
+        # ------------------------------------------------------------------
+        # Usa listar_consultas_por_medico_data(nova_data, id_medico), que
+        # filtra por DATA e MÉDICO direto no SQL — diferente de
+        # listar_consultas_por_medico(id_medico), usada em _ir_hoje() e no
+        # carregamento inicial, que traz todas as consultas do médico sem
+        # filtro de data.
+        #
+        # Roda em thread separada via run_async. self.data_atual só é
+        # atualizada dentro de _ao_concluir, depois que os dados chegam,
+        # para não mudar a data exibida no header antes de confirmar que
+        # a busca funcionou.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultas):
+            self.consultas_por_medico_logado = consultas
+            self.data_atual = nova_data
+            self._atualizar_label_data()
+            self._renderizar_consultas()
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar as consultas.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.listar_consultas_por_medico_data(nova_data, self.id_medico),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
 
     def _renderizar_consultas(self):
         for w in self.lista.winfo_children():
@@ -238,8 +243,6 @@ class DoctorView(ctk.CTkFrame):
 
         data_str = self.data_atual.strftime("%d/%m/%Y")
 
-        # FICTÍCIO: filtra a lista em memória pela data.
-        # BACKEND (depois): listar_consultas_por_data(id_medico, data_str)
         consultas_do_dia = [c for c in self.consultas_por_medico_logado if c["data"] == data_str]
 
         total = len(consultas_do_dia)
@@ -326,15 +329,6 @@ class DoctorView(ctk.CTkFrame):
 
         self.anexos_atendimento = [dict(a) for a in consulta.get("anexos", [])]
 
-        # Atendimentos já concluídos ficam bloqueados: campos só-leitura,
-        # sem botão de salvar, sem poder anexar/excluir anexo. Evita que
-        # o médico sobrescreva um registro médico já finalizado sem
-        # querer, só por ter clicado em "Ver atendimento" de novo.
-        #
-        # BACKEND: esta trava aqui é só de UI. Quando salvar_atendimento
-        # for implementado, vale repetir essa checagem no servidor também
-        # (ex: recusar UPDATE se a consulta já estiver com status
-        # "Atendido"), pra não depender só do front impedir o reenvio.
         somente_leitura = consulta.get("status") == "Atendido"
 
         container = ctk.CTkFrame(self, fg_color=self.bg)
@@ -404,20 +398,44 @@ class DoctorView(ctk.CTkFrame):
         campo_receita = self._campo(scroll, "Receita")
         campo_exames = self._campo(scroll, "Exames solicitados")
 
-        # FICTÍCIO: busca no dict em memória pelo id_consulta.
-        # BACKEND (depois): buscar_atendimento(id_consulta) -> dict | None
-        atendimento_existente = self.atendimento_controller.atendimentos_salvos(consulta["id_consulta"])
-        print(atendimento_existente)
-        if atendimento_existente:
-            campo_queixa.insert("1.0", atendimento_existente.get("queixa", ""))
-            campo_observacoes.insert("1.0", atendimento_existente.get("observacoes", ""))
-            campo_diagnostico.insert("1.0", atendimento_existente.get("diagnostico", ""))
-            campo_receita.insert("1.0", atendimento_existente.get("receita", ""))
-            campo_exames.insert("1.0", atendimento_existente.get("exames", ""))
+        # ------------------------------------------------------------------
+        # ANTES: "self.atendimento_controller.atendimentos_salvos(
+        # consulta["id_consulta"])" rodava direto aqui, travando a janela
+        # ao abrir cada consulta enquanto espera a resposta da nuvem.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async. Os
+        # campos só são pré-preenchidos dentro de _ao_concluir, depois
+        # que o resultado chega — e ficam desabilitados em seguida, se
+        # for o caso (somente_leitura), preservando a ordem original.
+        # ------------------------------------------------------------------
+        def _ao_concluir_atendimento(atendimento_existente):
+            print(atendimento_existente)
+            if atendimento_existente:
+                campo_queixa.insert("1.0", atendimento_existente.get("queixa", ""))
+                campo_observacoes.insert("1.0", atendimento_existente.get("observacoes", ""))
+                campo_diagnostico.insert("1.0", atendimento_existente.get("diagnostico", ""))
+                campo_receita.insert("1.0", atendimento_existente.get("receita", ""))
+                campo_exames.insert("1.0", atendimento_existente.get("exames", ""))
 
-        if somente_leitura:
-            for campo in (campo_queixa, campo_observacoes, campo_diagnostico, campo_receita, campo_exames):
-                campo.configure(state="disabled")
+            if somente_leitura:
+                for campo in (campo_queixa, campo_observacoes, campo_diagnostico, campo_receita, campo_exames):
+                    campo.configure(state="disabled")
+
+        def _ao_erro_atendimento(erro):
+            messagebox.showerror(
+                "Erro ao carregar atendimento",
+                f"Não foi possível carregar dados do atendimento anterior.\nDetalhe: {erro}",
+            )
+            if somente_leitura:
+                for campo in (campo_queixa, campo_observacoes, campo_diagnostico, campo_receita, campo_exames):
+                    campo.configure(state="disabled")
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.atendimentos_salvos(consulta["id_consulta"]),
+            ao_concluir=_ao_concluir_atendimento,
+            ao_erro=_ao_erro_atendimento,
+            mensagem="Carregando atendimento...",
+        )
 
         ctk.CTkButton(
             scroll, text="📜 Ver histórico deste paciente",
@@ -432,12 +450,9 @@ class DoctorView(ctk.CTkFrame):
             return
 
         def salvar():
-           
-            
-        
             queixa = campo_queixa.get("1.0", "end").strip() or "Não Adicionado"
             observacoes = campo_observacoes.get("1.0", "end").strip() or "Não Adicionado"
-            diagnostico =  campo_diagnostico.get("1.0", "end").strip() or "Não Adicionado"
+            diagnostico = campo_diagnostico.get("1.0", "end").strip() or "Não Adicionado"
             medicacao = campo_receita.get("1.0", "end").strip() or "Não Adicionado"
             exames = campo_exames.get("1.0", "end").strip() or "Não Adicionado"
             id_consulta = consulta["id_consulta"]
@@ -445,17 +460,40 @@ class DoctorView(ctk.CTkFrame):
             id_paciente = consulta["id_paciente"]
             print(id_paciente)
 
-            self.atendimento_controller.salvar_prontuario(queixa, observacoes, diagnostico, medicacao, exames, id_consulta, id_medico, id_paciente)
-            
-            status = "Atendido"
-            self.atendimento_controller.atualizar_status(id_consulta, status)
+            # ------------------------------------------------------------
+            # ANTES: "self.atendimento_controller.salvar_prontuario(...)"
+            # e "self.atendimento_controller.atualizar_status(...)"
+            # rodavam direto aqui, em sequência, travando a janela durante
+            # as duas idas à nuvem.
+            #
+            # AGORA: as duas chamadas vão JUNTAS dentro de uma única
+            # tarefa, que roda inteira numa única thread em segundo
+            # plano — um único overlay de loading do início ao fim das
+            # duas operações, em vez de duas idas separadas.
+            # ------------------------------------------------------------
+            def _tarefa():
+                self.atendimento_controller.salvar_prontuario(
+                    queixa, observacoes, diagnostico, medicacao, exames,
+                    id_consulta, id_medico, id_paciente,
+                )
+                self.atendimento_controller.atualizar_status(id_consulta, "Atendido")
 
-            # FICTÍCIO: salva no dict em memória e marca status como Atendido.
-            # BACKEND (depois): salvar_atendimento(id_consulta, dados)
-            
+            def _ao_concluir(resultado):
+                messagebox.showinfo("Sucesso", "Atendimento salvo com sucesso.")
+                self._montar_lista()
 
-            messagebox.showinfo("Sucesso", "Atendimento salvo com sucesso.")
-            self._montar_lista()
+            def _ao_erro(erro):
+                messagebox.showerror(
+                    "Erro ao salvar",
+                    f"Não foi possível salvar o atendimento.\nDetalhe: {erro}",
+                )
+
+            self.loading.run_async(
+                tarefa=_tarefa,
+                ao_concluir=_ao_concluir,
+                ao_erro=_ao_erro,
+                mensagem="Salvando atendimento...",
+            )
 
         ctk.CTkButton(
             container, text="✓ Salvar Atendimento", height=45, corner_radius=12,
@@ -480,10 +518,6 @@ class DoctorView(ctk.CTkFrame):
         return entry
 
     def _redesenhar_anexos_atendimento(self, consulta, somente_leitura=None):
-        # Guarda a flag como atributo de instância na primeira chamada
-        # (vinda de _abrir_atendimento) para que adicionar_anexo/excluir_anexo
-        # — que chamam este método de novo depois — continuem respeitando
-        # o mesmo modo sem precisar repassar o parâmetro toda vez.
         if somente_leitura is not None:
             self._anexos_somente_leitura = somente_leitura
         somente_leitura = getattr(self, "_anexos_somente_leitura", False)
@@ -549,18 +583,27 @@ class DoctorView(ctk.CTkFrame):
             ).pack(side="right", padx=(4, 0))
 
     def _abrir_anexo(self, anexo):
-        # FICTÍCIO: como os anexos de teste não existem em disco de
-        # verdade, só avisa qual seria aberto, em vez de tentar abrir.
-        # BACKEND (depois): se vier de storage, baixar_anexo(caminho_storage)
-        # roda via run_async; se já tiver caminho local, abre direto com
-        # self._abrir_arquivo(caminho).
-        try:
-            caminho = self.atendimento_controller.baixar_anexo(anexo["caminho_storage"])
+        # ------------------------------------------------------------------
+        # ANTES: "self.atendimento_controller.baixar_anexo(...)" rodava
+        # direto aqui, travando a janela enquanto baixava da nuvem.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async.
+        # ------------------------------------------------------------------
+        def _ao_concluir(caminho):
+            try:
+                self._abrir_arquivo(caminho)
+            except Exception as e:
+                messagebox.showerror("Erro ao abrir documento", str(e))
 
-            self._abrir_arquivo(caminho)
-        except Exception as e:
-            messagebox.showerror("Erro ao abrir documento", str(e))
-        
+        def _ao_erro(erro):
+            messagebox.showerror("Erro ao abrir documento", str(erro))
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.baixar_anexo(anexo["caminho_storage"]),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Baixando anexo...",
+        )
 
     def _excluir_anexo_atendimento(self, anexo, consulta):
         confirmar = messagebox.askyesno(
@@ -570,14 +613,30 @@ class DoctorView(ctk.CTkFrame):
         if not confirmar:
             return
 
-        try:
-            self.atendimento_controller.excluir_anexo(id_documento=anexo["id_documento"],
-                                                      caminho_storage=anexo["caminho_storage"])
+        # ------------------------------------------------------------------
+        # ANTES: "self.atendimento_controller.excluir_anexo(...)" rodava
+        # direto aqui, travando a janela durante a exclusão na nuvem.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async. A
+        # remoção da lista local e o redesenho só acontecem depois que a
+        # exclusão no backend é confirmada (dentro de _ao_concluir).
+        # ------------------------------------------------------------------
+        def _ao_concluir(resultado):
             self.anexos_atendimento.remove(anexo)
             consulta["anexos"] = list(self.anexos_atendimento)
             self._redesenhar_anexos_atendimento(consulta)
-        except Exception as e:
-            messagebox.showerror("Erro ao excluir anexo", str(e))
+
+        def _ao_erro(erro):
+            messagebox.showerror("Erro ao excluir anexo", str(erro))
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.excluir_anexo(
+                id_documento=anexo["id_documento"], caminho_storage=anexo["caminho_storage"]
+            ),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Excluindo anexo...",
+        )
 
     def _abrir_arquivo(self, caminho):
         if not os.path.exists(caminho):
@@ -617,28 +676,48 @@ class DoctorView(ctk.CTkFrame):
             font=ctk.CTkFont(size=18, weight="bold"), text_color=get_color("text"),
         ).pack(anchor="w")
 
-        # FICTÍCIO: busca no dict em memória pelo id_paciente.
-        # BACKEND (depois): listar_historico_paciente(id_paciente) -> list[dict]
-        historicos = self.atendimento_controller.historico_por_paciente(consulta["id_paciente"])
-
-        total = len(historicos)
-        ctk.CTkLabel(
-            info, text=f"{total} atendimento{'s' if total != 1 else ''} registrado{'s' if total != 1 else ''}",
-            font=ctk.CTkFont(size=12), text_color=get_color("text_secondary"),
-        ).pack(anchor="w")
+        self.label_total_historico = ctk.CTkLabel(
+            info, text="", font=ctk.CTkFont(size=12), text_color=get_color("text_secondary"),
+        )
+        self.label_total_historico.pack(anchor="w")
 
         lista_hist = ctk.CTkScrollableFrame(container, fg_color="transparent")
         lista_hist.pack(fill="both", expand=True, pady=15)
 
-        if not historicos:
-            ctk.CTkLabel(
-                lista_hist, text="Sem histórico ainda",
-                text_color=get_color("text_secondary"),
-            ).pack(anchor="w", pady=20)
-            return
+        # ------------------------------------------------------------------
+        # ANTES: "self.atendimento_controller.historico_por_paciente(...)"
+        # rodava direto aqui, travando a janela ao abrir o histórico.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async.
+        # ------------------------------------------------------------------
+        def _ao_concluir(historicos):
+            total = len(historicos)
+            self.label_total_historico.configure(
+                text=f"{total} atendimento{'s' if total != 1 else ''} registrado{'s' if total != 1 else ''}"
+            )
 
-        for h in historicos:
-            self._card_historico(lista_hist, h, consulta)
+            if not historicos:
+                ctk.CTkLabel(
+                    lista_hist, text="Sem histórico ainda",
+                    text_color=get_color("text_secondary"),
+                ).pack(anchor="w", pady=20)
+                return
+
+            for h in historicos:
+                self._card_historico(lista_hist, h, consulta)
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar histórico",
+                f"Não foi possível carregar o histórico do paciente.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=lambda: self.atendimento_controller.historico_por_paciente(consulta["id_paciente"]),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando histórico...",
+        )
 
     def _card_historico(self, parent, h, consulta_atual):
         card = ctk.CTkFrame(

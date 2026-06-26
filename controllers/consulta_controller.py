@@ -156,3 +156,21 @@ class ConsultaContrroler():
         return self.storage.baixar_pdf(caminho_storage)
     
 
+    def listar_por_data(self, data):
+
+        consultas = consulta_model.listar_por_data(data)
+
+        documentos = self.documentos_model.listar_todos()
+    
+        documentos_por_consulta = {}
+
+        for documento in documentos:
+            id_consulta = documento["id_consulta"]
+            if id_consulta not in documentos_por_consulta:
+                documentos_por_consulta[id_consulta] = []
+            documentos_por_consulta[id_consulta].append(documento)
+        for consulta in consultas:
+            consulta["anexos"] = documentos_por_consulta.get(
+                consulta["id_consulta"], []
+            )
+        return consultas

@@ -133,3 +133,38 @@ def atendimentos_salvos(id_consulta):
     cursor.close()
     conn.close()
     return dados
+
+    
+def listar_consultas_por_medico_data(nova_data, id_medico):
+    conn = conectar()
+    cursor = conn.cursor(dictionary=True)
+
+    
+    sql ="""
+        SELECT 
+            c.id_consulta,
+            p.nome as paciente,
+            c.id_paciente,
+            c.id_medico,
+            p.cpf,
+            m.nome as medico,
+            DATE_FORMAT(c.data, '%%d/%%m/%%Y') as data,
+            TIME_FORMAT(c.hora, '%%H:%%i') as hora,
+            c.status_consulta as status,
+            c.tipo_atendimento
+        FROM (
+            select id_consulta, id_paciente, id_medico, data, hora, status_consulta, tipo_atendimento 
+            from Consulta 	
+            where data = %s and id_medico = %s
+        ) as c
+        JOIN Paciente p ON c.id_paciente = p.id_paciente
+        JOIN Medico m ON c.id_medico = m.id_medico
+    """
+    values = nova_data , id_medico
+    cursor.execute(sql, values)
+
+
+    consultas_por_medico = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return consultas_por_medico

@@ -27,6 +27,8 @@ COLOR_THEME = {
         "success":              "#16A34A",
         "success_hover":        "#15803D",
         "danger":               "#DC2626",
+        "warning":              "#D97706",   # âmbar — usado em gráficos/cards (ex: "Particular")
+        "warning_hover":        "#B45309",
         "info":                 "#0EA5E9",
         "purple":               "#8B5CF6",
         "login_bg":             "#DBEAFE",
@@ -65,6 +67,8 @@ COLOR_THEME = {
         "success":              "#34D399",
         "success_hover":        "#059669",
         "danger":               "#F87171",
+        "warning":              "#FBBF24",   # âmbar mais claro p/ contraste no fundo escuro
+        "warning_hover":        "#F59E0B",
         "info":                 "#0EA5E9",
         "purple":               "#A855F7",
         "login_bg":             "#1E3A8A",

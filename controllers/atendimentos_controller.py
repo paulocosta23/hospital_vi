@@ -87,3 +87,22 @@ class AtendimentosContrroler():
 
     def atendimentos_salvos(self, id_consulta):
         return atendimento_model.atendimentos_salvos(id_consulta=id_consulta)
+    
+    def listar_consultas_por_medico_data(self, nova_data, id_medico):
+
+        consulta_por_medico = atendimento_model.listar_consultas_por_medico_data(nova_data=nova_data, id_medico=id_medico)
+
+        documentos = self.documentos_model.listar_todos()
+    
+        documentos_por_consulta = {}
+
+        for documento in documentos:
+            id_consulta = documento["id_consulta"]
+            if id_consulta not in documentos_por_consulta:
+                documentos_por_consulta[id_consulta] = []
+            documentos_por_consulta[id_consulta].append(documento)
+        for consulta in consulta_por_medico:
+            consulta["anexos"] = documentos_por_consulta.get(
+                consulta["id_consulta"], []
+            )
+        return consulta_por_medico

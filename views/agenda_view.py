@@ -19,7 +19,7 @@ STATUS_COLORS = {
     "Atendido": "#22C55E",   # verde
 }
 
-STATUS_OPCOES = ["Agendado", "Chegou", "Atendido"]
+STATUS_OPCOES = ["Agendado", "Chegou"]
 
 
 class AgendaView(ctk.CTkFrame):
@@ -27,7 +27,6 @@ class AgendaView(ctk.CTkFrame):
         super().__init__(master)
         self.pack(fill="both", expand=True)
 
-        # Cores vindas do tema central do app
         self.bg = get_color("bg")
         self.panel = get_color("panel")
         self.card_color = get_color("card")
@@ -43,13 +42,6 @@ class AgendaView(ctk.CTkFrame):
         self.arquivos_pdf = []
         self.consulta_controller = ConsultaContrroler()
 
-        # ------------------------------------------------------------------
-        # BACKEND: esta lista é o "banco" temporário em memória.
-        # Quando ligar no MySQL, troque por algo como:
-        #   self.consultas = self.consulta_service.listar_todas()
-        # e remova o armazenamento local — a fonte de verdade passa a ser
-        # o banco, não esta lista do Python.
-        # ------------------------------------------------------------------
         self.consultas = []
 
         self.dados_medico = []
@@ -66,16 +58,6 @@ class AgendaView(ctk.CTkFrame):
         self._carregar_dados_iniciais()
 
     def _carregar_dados_iniciais(self):
-        """Busca médicos, pacientes E consultas juntos, numa única ida à
-        nuvem, em vez de duas chamadas separadas (uma pra médico/paciente
-        no __init__, outra pra consultas dentro de render()). Isso evita
-        dois ciclos de loading consecutivos só pra abrir a tela.
-
-        Depois desta primeira carga, render() continua funcionando como
-        antes (busca consultas de novo via run_async) para as navegações
-        de data seguintes — aqui só evitamos repetir a ida à nuvem na
-        abertura inicial, já que os dados já vieram juntos."""
-
         def _tarefa():
             inicio = time.time()
             dados_medico = self.consulta_controller.lista_medico()
@@ -106,9 +88,6 @@ class AgendaView(ctk.CTkFrame):
             mensagem="Carregando agenda...",
         )
 
-    # ──────────────────────────────────────────────────────────────────
-    # HEADER
-    # ──────────────────────────────────────────────────────────────────
     def _montar_header(self):
         header = ctk.CTkFrame(
             self,
@@ -119,7 +98,6 @@ class AgendaView(ctk.CTkFrame):
         header.pack(fill="x", padx=20, pady=(20, 10))
         header.pack_propagate(False)
 
-        # Título + contador de consultas do dia (atualizado em update_data)
         titulo_frame = ctk.CTkFrame(header, fg_color="transparent")
         titulo_frame.place(x=25, y=18)
 
@@ -183,7 +161,6 @@ class AgendaView(ctk.CTkFrame):
             placeholder_text="dd/mm/aaaa",
         )
         self.input_data.pack(side="left", padx=5)
-        # Enter no campo de data já navega, sem precisar clicar em "Ir"
         self.input_data.bind("<Return>", lambda e: self.ir_data())
 
         ctk.CTkButton(
@@ -203,17 +180,10 @@ class AgendaView(ctk.CTkFrame):
             command=lambda: self.popup(),
         ).pack(side="right", padx=15)
 
-    # ──────────────────────────────────────────────────────────────────
-    # NAVEGAÇÃO DE DATA
-    # ──────────────────────────────────────────────────────────────────
     def update_data(self):
         self.label_data.configure(text=self.data_atual.strftime("%d/%m/%Y"))
 
-        # Atualiza o contador de consultas do dia exibido no header
         data_str = self.data_atual.strftime("%d/%m/%Y")
-        # BACKEND: aqui também daria pra trocar por uma query
-        # "SELECT COUNT(*) FROM consultas WHERE data = ?" em vez de filtrar
-        # a lista em memória — fica mais rápido com muitos registros.
         total = len([c for c in self.consultas if c["data"] == data_str])
         if total == 0:
             self.label_contador.configure(text="Nenhuma consulta")
@@ -235,15 +205,39 @@ class AgendaView(ctk.CTkFrame):
     def ir_hoje(self):
         self.data_atual = datetime.now()
         self.update_data()
-        self.render()
+
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultas = self.consulta_controller.listar()"
+        # rodava direto aqui, travando a tela sem nenhum feedback visual
+        # até a nuvem responder.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async, com o
+        # overlay de loading visível durante a espera. Ao concluir,
+        # _renderizar_consultas_do_dia() desenha os cards a partir dos
+        # dados já atualizados em memória.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultas):
+            self.consultas = consultas
+            self._renderizar_consultas_do_dia()
+
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar as consultas de hoje.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=self.consulta_controller.listar,
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
 
     def ir_data(self):
         texto = self.input_data.get().strip()
         try:
             nova_data = datetime.strptime(texto, "%d/%m/%Y")
         except ValueError:
-            # Antes só dava print() — usuário nunca via o erro.
-            # Agora avisa de fato e mantém o foco no campo.
             messagebox.showerror(
                 "Data inválida",
                 "Digite a data no formato dd/mm/aaaa.\nEx: 25/12/2026",
@@ -251,13 +245,34 @@ class AgendaView(ctk.CTkFrame):
             self.input_data.focus_set()
             return
 
-        self.data_atual = nova_data
-        self.update_data()
-        self.render()
+        # ------------------------------------------------------------------
+        # ANTES: "self.consultas = self.consulta_controller.listar_por_data(...)"
+        # rodava direto aqui, travando a tela sem feedback visual.
+        #
+        # AGORA: mesma chamada, em thread separada via run_async — mesmo
+        # padrão de ir_hoje(). self.data_atual só é atualizada dentro de
+        # _ao_concluir, depois que os dados já chegaram, para não mudar
+        # a data exibida no header antes de saber se a busca deu certo.
+        # ------------------------------------------------------------------
+        def _ao_concluir(consultas):
+            self.consultas = consultas
+            self.data_atual = nova_data
+            self.update_data()
+            self._renderizar_consultas_do_dia()
 
-    # ──────────────────────────────────────────────────────────────────
-    # FORMATAÇÃO / MÁSCARAS
-    # ──────────────────────────────────────────────────────────────────
+        def _ao_erro(erro):
+            messagebox.showerror(
+                "Erro ao carregar consultas",
+                f"Não foi possível carregar as consultas para essa data.\nDetalhe: {erro}",
+            )
+
+        self.loading.run_async(
+            tarefa=lambda: self.consulta_controller.listar_por_data(nova_data),
+            ao_concluir=_ao_concluir,
+            ao_erro=_ao_erro,
+            mensagem="Carregando consultas...",
+        )
+
     def formatar_cpf(self, texto):
         nums = "".join(filter(str.isdigit, texto))[:11]
         if len(nums) <= 3:
@@ -269,9 +284,6 @@ class AgendaView(ctk.CTkFrame):
         return f"{nums[:3]}.{nums[3:6]}.{nums[6:9]}-{nums[9:]}"
 
     def formatar_data(self, texto):
-        """Mesma lógica do formatar_cpf: pega só os números digitados e
-        reinsere as barras nas posições certas (dd/mm/aaaa) conforme o
-        usuário vai digitando."""
         nums = "".join(filter(str.isdigit, texto))[:8]
         if len(nums) <= 2:
             return nums
@@ -280,10 +292,6 @@ class AgendaView(ctk.CTkFrame):
         return f"{nums[:2]}/{nums[2:4]}/{nums[4:]}"
 
     def formatar_hora(self, texto):
-        """Mesma lógica das outras máscaras, mas com um cuidado extra:
-        corrige na hora (literalmente) se o usuário digitar uma hora
-        acima de 23 ou minuto acima de 59, em vez de deixar passar e
-        só reclamar depois no clique de Salvar."""
         nums = "".join(filter(str.isdigit, texto))[:4]
 
         if len(nums) >= 2:
@@ -307,10 +315,6 @@ class AgendaView(ctk.CTkFrame):
         return f"{nums[:3]}.***.***-{nums[-2:]}"
 
     def _validar_cpf_completo(self, cpf):
-        """Confere apenas se tem 11 dígitos. Validação de dígito verificador
-        real (algoritmo do CPF) fica pro backend, se você quiser ser
-        rigoroso — aqui é só uma checagem de formato pra não deixar
-        passar campo incompleto."""
         nums = "".join(filter(str.isdigit, cpf))
         return len(nums) == 11
 
@@ -324,24 +328,13 @@ class AgendaView(ctk.CTkFrame):
         except ValueError:
             return False
 
-    # ──────────────────────────────────────────────────────────────────
-    # LISTAGEM / CARDS
-    # ──────────────────────────────────────────────────────────────────
-
     def _renderizar_consultas_do_dia(self):
-        """Desenha os cards a partir de self.consultas (já em memória),
-        sem ir à rede. Usado tanto pela carga inicial (_carregar_dados_iniciais)
-        quanto pelo final de render() (depois que a busca assíncrona volta)."""
         inicio = time.time()
         for w in self.lista.winfo_children():
             w.destroy()
 
         data = self.data_atual.strftime("%d/%m/%Y")
 
-        # BACKEND: aqui é o ponto natural pra trocar por uma query filtrada
-        # e ordenada no banco, ex:
-        #   SELECT * FROM consultas WHERE data = %s ORDER BY hora ASC
-        # Por enquanto filtra e ordena em memória mesmo.
         consultas_do_dia = [c for c in self.consultas if c["data"] == data]
         consultas_do_dia.sort(key=lambda c: c.get("hora", ""))
 
@@ -360,19 +353,18 @@ class AgendaView(ctk.CTkFrame):
 
     def render(self):
         """Filtra e redesenha a partir de self.consultas, que já está em
-        memória — SEM ir ao banco. Usado pela navegação de data (avancar/
-        voltar/ir_hoje/ir_data), que só precisa re-filtrar o que já foi
-        carregado, sem precisar de uma nova ida à nuvem a cada troca de dia.
+        memória — SEM ir ao banco. Usado pela navegação de data
+        (avancar/voltar), que só precisa re-filtrar o que já foi
+        carregado, sem precisar de uma nova ida à nuvem a cada troca de
+        dia.
 
-        Para os casos que precisam de dados atualizados do banco (depois
-        de salvar/editar uma consulta), use _recarregar_e_renderizar()."""
+        ir_hoje() e ir_data() têm sua própria busca via run_async (com
+        loading), já que ambas podem precisar de dados que não estão em
+        self.consultas ainda — por exemplo, ir_data() para uma data fora
+        do período já carregado em memória."""
         self._renderizar_consultas_do_dia()
 
     def _recarregar_e_renderizar(self):
-        """Busca a lista de consultas atualizada no banco (via run_async)
-        e, ao concluir, redesenha a tela. Usado só depois de salvar ou
-        editar uma consulta, onde self.consultas em memória ficaria
-        desatualizado em relação ao que o controller acabou de gravar."""
         def _ao_concluir(consultas):
             self.consultas = consultas
             self._renderizar_consultas_do_dia()
@@ -394,9 +386,6 @@ class AgendaView(ctk.CTkFrame):
         card = ctk.CTkFrame(self.lista, fg_color=self.card_color, corner_radius=16)
         card.pack(fill="x", pady=6)
 
-        # A barra lateral agora reflete o STATUS da consulta, não apenas
-        # alterna de cor por posição na lista (índice par/ímpar não dizia
-        # nada sobre o conteúdo real do card).
         cor_status = STATUS_COLORS.get(c.get("status", "Agendado"), self.primary)
 
         bar = ctk.CTkFrame(card, width=6, fg_color=cor_status, corner_radius=10)
@@ -436,7 +425,6 @@ class AgendaView(ctk.CTkFrame):
             anchor="w",
         ).pack(anchor="w")
 
-        # Indicador de anexos — só aparece se a consulta tiver PDFs vinculados
         if c.get("anexos"):
             ctk.CTkLabel(
                 info,
@@ -449,7 +437,6 @@ class AgendaView(ctk.CTkFrame):
         lado_direito = ctk.CTkFrame(container, fg_color="transparent")
         lado_direito.pack(side="right")
 
-        # Badge de status com cor de fundo (em vez de texto solto)
         ctk.CTkLabel(
             lado_direito,
             text=f"  {c.get('status', 'Agendado')}  ",
@@ -471,9 +458,6 @@ class AgendaView(ctk.CTkFrame):
             command=lambda c=c: self.popup(c),
         ).pack(side="left")
 
-    # ──────────────────────────────────────────────────────────────────
-    # POPUP DE CRIAÇÃO / EDIÇÃO
-    # ──────────────────────────────────────────────────────────────────
     def popup(self, consulta=None):
         popup = ctk.CTkToplevel(self)
         popup.title("Editar consulta" if consulta else "Nova consulta")
@@ -492,14 +476,12 @@ class AgendaView(ctk.CTkFrame):
             text_color=get_color("text"),
         ).pack(pady=(0, 15))
 
-        # ---- Paciente -----------------------------------------------
         ctk.CTkLabel(frame, text="Paciente *", anchor="w",
                      text_color=get_color("text_secondary"),
                      font=ctk.CTkFont(size=12)).pack(fill="x")
         paciente = ctk.CTkEntry(frame, placeholder_text="Nome completo")
         paciente.pack(fill="x", pady=(2, 12))
 
-        # ---- CPF (com máscara em tempo real) -------------------------
         ctk.CTkLabel(frame, text="CPF *", anchor="w",
                      text_color=get_color("text_secondary"),
                      font=ctk.CTkFont(size=12)).pack(fill="x")
@@ -514,14 +496,12 @@ class AgendaView(ctk.CTkFrame):
                 cpf.insert(0, formatado)
         cpf.bind("<KeyRelease>", _on_cpf_change)
 
-        # ---- Médico ---------------------------------------------------
         ctk.CTkLabel(frame, text="Médico *", anchor="w",
                      text_color=get_color("text_secondary"),
                      font=ctk.CTkFont(size=12)).pack(fill="x")
         medico = ctk.CTkOptionMenu(frame, values=self.medicos)
         medico.pack(fill="x", pady=(2, 12))
 
-        # ---- Data e Hora lado a lado -----------------------------------
         linha_data_hora = ctk.CTkFrame(frame, fg_color="transparent")
         linha_data_hora.pack(fill="x", pady=(0, 12))
 
@@ -557,15 +537,12 @@ class AgendaView(ctk.CTkFrame):
                 hora.insert(0, formatado)
         hora.bind("<KeyRelease>", _on_hora_change)
 
-        # ---- Status -----------------------------------------------------
         ctk.CTkLabel(frame, text="Status", anchor="w",
                      text_color=get_color("text_secondary"),
                      font=ctk.CTkFont(size=12)).pack(fill="x")
         status = ctk.CTkOptionMenu(frame, values=STATUS_OPCOES)
         status.pack(fill="x", pady=(2, 12))
 
-        # ---- Pré-preenchimento (modo edição) ----------------------------
-        #anexos = list(consulta.get("anexos", [])) if consulta else []
         if consulta:
             anexos = [
                 {
@@ -591,11 +568,9 @@ class AgendaView(ctk.CTkFrame):
             hora.insert(0, consulta.get("hora", ""))
             status.set(consulta.get("status", "Agendado"))
         else:
-            # Sugere a data atualmente visível na agenda — economiza digitação
             data.insert(0, self.data_atual.strftime("%d/%m/%Y"))
             status.set("Agendado")
 
-        # ---- Anexos -------------------------------------------------------
         ctk.CTkLabel(frame, text="Anexos (PDF)", anchor="w",
                      text_color=get_color("text_secondary"),
                      font=ctk.CTkFont(size=12)).pack(fill="x")
@@ -608,7 +583,7 @@ class AgendaView(ctk.CTkFrame):
             for a in anexos:
                 box.insert("end", os.path.basename(a["nome_original"]) + "\n")
         _redesenhar_anexos()
-        box.configure(state="disabled")  # lista só-leitura; gerência é pelos botões abaixo
+        box.configure(state="disabled")
 
         def adicionar_anexo():
             arq = filedialog.askopenfilename(
@@ -618,17 +593,10 @@ class AgendaView(ctk.CTkFrame):
             if not arq:
                 return
 
-            # Evita anexar o mesmo arquivo duas vezes. Comparamos pelo
-            # caminho normalizado (os.path.normcase resolve diferenças de
-            # maiúsc/minúsc e barras no Windows) em vez do caminho bruto,
-            # pra não deixar passar duplicidade por diferença de formatação.
-
             nome_arquivo = os.path.basename(arq)
 
-           # arq_normalizado = os.path.normcase(os.path.abspath(arq))
             ja_existe = any(
                 a["nome_original"].lower() == nome_arquivo.lower()
-                #os.path.normcase(os.path.abspath(a["caminho"])) == arq_normalizado
                 for a in anexos
             )
             if ja_existe:
@@ -654,16 +622,6 @@ class AgendaView(ctk.CTkFrame):
 
             ultimo = anexos[-1]
 
-            # ------------------------------------------------------------
-            # ANTES: quando o anexo só existia no storage (sem caminho
-            # local), "self.consulta_controller.baixar_anexo(...)" rodava
-            # direto aqui, travando a janela enquanto baixava da nuvem.
-            #
-            # AGORA: se o arquivo já está local (anexo recém-adicionado
-            # nesta sessão), abre direto — não há rede envolvida, então
-            # não precisa de loading. Se precisar baixar do storage,
-            # a chamada de rede vai via run_async.
-            # ------------------------------------------------------------
             if ultimo["caminho"] is not None:
                 try:
                     self.abrir_arquivo(ultimo["caminho"])
@@ -719,7 +677,6 @@ class AgendaView(ctk.CTkFrame):
             command=remover_ultimo_anexo,
         ).pack(side="left", padx=(4, 0))
 
-        # ---- Validação central ---------------------------------------------
         def validar_formulario():
             erros = []
             if not paciente.get().strip():
@@ -775,33 +732,6 @@ class AgendaView(ctk.CTkFrame):
                 messagebox.showwarning("Atenção", "Medico não contrado!")
                 return
 
-            # ------------------------------------------------------------
-            # BACKEND: este é o ponto exato de integração com o MySQL.
-            #
-            # Se for edição (consulta já existe):
-            #   self.consulta_service.atualizar(consulta["id"], dados)
-            #
-            # Se for criação:
-            #   novo_id = self.consulta_service.criar(dados)
-            #   dados["id"] = novo_id
-            #
-            # Os anexos (lista de caminhos de PDF) provavelmente devem
-            # virar registros numa tabela separada `consulta_anexos`
-            # (consulta_id, caminho_arquivo, nome_original) em vez de
-            # ficarem serializados dentro do registro da consulta.
-            #
-            # ANTES: "self.consulta_controller.editar(...)" ou
-            # "self.consulta_controller.salvar(...)" rodava direto aqui,
-            # travando a janela durante todo o upload dos anexos + grava
-            # ção no banco (potencialmente o trecho mais lento de toda a
-            # tela, já que envolve transferência de arquivo).
-            #
-            # AGORA: mesma chamada (editar ou salvar, conforme o caso),
-            # envolvida em run_async. A leitura do resultado (sucesso,
-            # erros_upload) e as messagebox que dependem dele foram
-            # movidas para dentro de _ao_concluir, mas a lógica de
-            # decisão é idêntica à original.
-            # ------------------------------------------------------------
             if consulta:
                 def _tarefa():
                     return self.consulta_controller.editar(
@@ -887,29 +817,13 @@ class AgendaView(ctk.CTkFrame):
             if not confirmar:
                 return
 
-            # ------------------------------------------------------------
-            # BACKEND: substituir por exclusão real no banco, ex:
-            #   self.consulta_service.excluir(consulta["id"])
-            # Vale considerar soft delete (campo `ativo`/`excluido_em`)
-            # em vez de DELETE físico, pra manter histórico do paciente.
-            # ------------------------------------------------------------
             self.consultas.remove(consulta)
             self.update_data()
             self.render()
             popup.destroy()
 
-        # ---- Botões finais ---------------------------------------------------
         btns = ctk.CTkFrame(frame, fg_color="transparent")
         btns.pack(fill="x", pady=(5, 0))
-
-        #if consulta:
-            #ctk.CTkButton(
-               # btns,
-               # text="Excluir",
-               # fg_color="#7C2D2D",
-               # hover_color="#9B3A3A",
-               # command=excluir,
-           # ).pack(side="left", expand=True, padx=(0, 5))
 
         ctk.CTkButton(
             btns,
@@ -927,14 +841,7 @@ class AgendaView(ctk.CTkFrame):
             command=salvar,
         ).pack(side="left", expand=True, padx=(5, 0))
 
-    # ──────────────────────────────────────────────────────────────────
     def abrir_arquivo(self, caminho):
-        """Abre o PDF anexado no visualizador padrão do sistema.
-
-        Mantido apenas para Windows (os.startfile), conforme decidido.
-        Se um dia for multiplataforma: usar `subprocess.run(["open", caminho])`
-        no macOS e `subprocess.run(["xdg-open", caminho])` no Linux.
-        """
         if not os.path.exists(caminho):
             messagebox.showerror("Arquivo não encontrado", f"O arquivo não existe mais:\n{caminho}")
             return

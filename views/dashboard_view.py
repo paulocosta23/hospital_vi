@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from .theme import get_color
+from .loading_overlay import LoadingOverlay
 from controllers.medico_controller import buscar_por_usuario
 from views.agenda_view import AgendaView
 from views.patients_view import PatientsView
@@ -46,6 +47,14 @@ class DashboardView(ctk.CTkFrame):
         # ------------------------------------------------------------------
         self.tela_atual_callback = None
 
+        # Overlay de loading cobrindo a tela inteira (sidebar + conteúdo),
+        # usado enquanto busca os dados do médico logado (id_medico_logado)
+        # via buscar_por_usuario — chamada de rede que antes rodava direto
+        # dentro de _build_sidebar(), travando a tela sem feedback visual.
+        # Criado ANTES de _build_ui() porque _build_sidebar() (chamada lá
+        # dentro) já pode precisar dele na primeira renderização.
+        self.loading = LoadingOverlay(self)
+
         self._build_ui()
 
         # Monitora redimensionamento da janela raiz
@@ -89,11 +98,61 @@ class DashboardView(ctk.CTkFrame):
         self.show_welcome()
 
     def _build_sidebar(self):
-        """Popula (ou re-popula) a sidebar inteira."""
+        """Ponto de entrada da construção da sidebar.
+
+        Quando o usuário é médico, os itens de menu dependem de
+        id_medico_logado/nome_medico_logado, que vêm de uma chamada de
+        rede (buscar_por_usuario) — então a sidebar só pode ser
+        finalizada DEPOIS que essa busca retornar. Para os outros tipos
+        de usuário (admin/atendente), não há essa dependência e a
+        sidebar é construída direto, sem loading.
+
+        Chamado toda vez que o tema muda ou a janela é redimensionada —
+        por pedido explícito, a busca do médico é refeita em cada uma
+        dessas chamadas, não só uma vez.
+        """
         for w in self.sidebar.winfo_children():
             w.destroy()
 
         tipo = self.usuario[0]
+
+        if tipo == "medico":
+            id_usuario = self.usuario[2]
+
+            def _ao_concluir(dados_medico_logado):
+                print(dados_medico_logado)
+                self.id_medico_logado = dados_medico_logado[0]
+                self.nome_medico_logado = dados_medico_logado[1]
+                self._continuar_build_sidebar(tipo)
+
+            def _ao_erro(erro):
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Erro ao carregar médico",
+                    f"Não foi possível carregar os dados do médico logado.\nDetalhe: {erro}",
+                )
+                # Mesmo com erro, finaliza a sidebar (sem os itens de
+                # menu dependentes do médico) para não deixar a tela
+                # travada sem rodapé/botão de sair.
+                self.id_medico_logado = None
+                self.nome_medico_logado = None
+                self._continuar_build_sidebar(tipo)
+
+            self.loading.run_async(
+                tarefa=lambda: buscar_por_usuario(id_usuario=id_usuario),
+                ao_concluir=_ao_concluir,
+                ao_erro=_ao_erro,
+                mensagem="Carregando dados do médico...",
+            )
+        else:
+            self._continuar_build_sidebar(tipo)
+
+    def _continuar_build_sidebar(self, tipo):
+        """Resto da construção da sidebar — cabeçalho, divisor, itens de
+        menu, rodapé. Para tipo == "medico", já roda com
+        self.id_medico_logado/self.nome_medico_logado resolvidos (depois
+        do run_async em _build_sidebar). Para os demais tipos, roda
+        direto, sem nenhuma chamada de rede envolvida."""
         state = self._sidebar_state
         mini  = (state == "mini")
 
@@ -144,8 +203,6 @@ class DashboardView(ctk.CTkFrame):
         self.divisor_topo = ctk.CTkFrame(self.sidebar, height=1, fg_color=get_color("border"))
         self.divisor_topo.pack(fill="x", padx=12, pady=(12, 10))
 
-        id_usuario = self.usuario[2]
-        print(id_usuario)
         # ── Itens de menu ────────────────────────────
         if tipo == "atendente":
             menu_items = [
@@ -153,21 +210,14 @@ class DashboardView(ctk.CTkFrame):
                 ("👥", "Pacientes",     self.show_pacientes),
             ]
         elif tipo == "medico":
-
             menu_items = [
-                ("📅", "Minha agenda",  self.show_agenda),
                 ("🩺", "Atendimentos",  self.show_atendimentos),
                 ("📊", "Relatórios",    self.show_relatorios),
             ]
-            dados_medico_logado = buscar_por_usuario(id_usuario=id_usuario)
-            print(dados_medico_logado)
-            self.id_medico_logado = dados_medico_logado[0]
-            self.nome_medico_logado = dados_medico_logado[1]
         else:
             menu_items = [
                 ("📅", "Agenda",        self.show_agenda),
                 ("👥", "Pacientes",     self.show_pacientes),
-                ("🩺", "Atendimentos",  self.show_atendimentos),
                 ("📊", "Relatórios",    self.show_relatorios),
                 ("⚙️", "Configurações", self.show_configuracoes),
             ]
@@ -456,7 +506,7 @@ class DashboardView(ctk.CTkFrame):
     def show_atendimentos(self):
         self.tela_atual_callback = self.show_atendimentos
         self.clear()
-        DoctorView(self.content, id_medico=self.id_medico_logado,nome_medico=self.nome_medico_logado)
+        DoctorView(self.content, id_medico=self.id_medico_logado, nome_medico=self.nome_medico_logado)
 
     def show_relatorios(self):
         self.tela_atual_callback = self.show_relatorios
@@ -486,18 +536,9 @@ class DashboardView(ctk.CTkFrame):
         # Reconstrói sidebar para refletir novas cores
         self._build_sidebar()
 
-        # ------------------------------------------------------------------
-        # ANTES: só recarregava a tela de welcome quando self.botao_ativo
-        # era None — ou seja, qualquer outra tela aberta (Agenda, Doctor,
-        # etc) nunca era recarregada após a troca de tema, ficando com
-        # cores antigas até o usuário trocar de tela manualmente.
-        #
-        # AGORA: chama de volta o mesmo método que abriu a tela atual
-        # (guardado em self.tela_atual_callback por cada show_*), igual
-        # ao que já acontece quando o usuário clica manualmente no menu.
-        # Fallback para show_welcome caso, por algum motivo, nenhuma tela
-        # tenha sido aberta ainda.
-        # ------------------------------------------------------------------
+        # Recarrega a tela atual (welcome ou a view ativa) chamando de
+        # volta o mesmo método que a abriu, igual ao que já acontece
+        # quando o usuário clica manualmente no menu.
         if self.tela_atual_callback:
             self.tela_atual_callback()
         else:

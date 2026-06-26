@@ -1,5 +1,45 @@
 import customtkinter as ctk
+from controllers.relatorios_controller import RelatorioContrroler
+from datetime import datetime, timedelta
+from tkinter import filedialog, messagebox, TclError
+import matplotlib
+matplotlib.use("TkAgg")  # backend consistente com FigureCanvasTkAgg abaixo.
+                          # Usar "Agg" (não-interativo, sem suporte a
+                          # eventos/foco) junto com FigureCanvasTkAgg é uma
+                          # combinação inconsistente — o Agg não tem a
+                          # infraestrutura de eventos que o canvas Tkinter
+                          # espera, o que gera callbacks malformados
+                          # apontando pra widgets já destruídos.
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from .theme import get_color
+from .exportar_relatorio_pdf import exportar_relatorio_pdf
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BACKEND PLUGADO: RelatorioContrroler().listar_relatorio() já traz todas
+# as consultas (medico, tipo, plano, data), filtradas por status =
+# 'Atendido' no SQL. O filtro de período e todo o agrupamento (por
+# médico, por plano, por dia) continua sendo feito aqui em Python, sobre
+# essa lista completa.
+#
+# IMPORTANTE — formato do campo "tipo":
+# O banco guarda o valor BRUTO da coluna tipo_atendimento como
+# "plano" ou "particular" (minúsculo). Todas as COMPARAÇÕES internas
+# (contagem, filtros) usam esses valores brutos. O texto "Convênio" só
+# aparece na CAMADA DE EXIBIÇÃO (labels de cards, gráficos, PDF) — nunca
+# em comparações com c["tipo"].
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Valores brutos exatamente como vêm da coluna tipo_atendimento no banco.
+TIPO_PLANO_BANCO = "plano"
+TIPO_PARTICULAR_BANCO = "particular"
+
+# Rótulos exibidos para o usuário (camada de exibição apenas).
+LABEL_CONVENIO = "Convênio"
+LABEL_PARTICULAR = "Particular"
+
+
+FILTROS_PERIODO = ["Hoje", "Última semana", "Último mês", "Personalizado"]
 
 
 class ReportsView(ctk.CTkFrame):
@@ -8,455 +48,527 @@ class ReportsView(ctk.CTkFrame):
         self.pack(fill="both", expand=True)
         self.configure(fg_color=get_color("bg"))
 
-        self.consultas = [
-            {"medico": "Dr. Carlos", "tipo": "Particular", "plano": ""},
-            {"medico": "Dr. Ana",    "tipo": "Convênio",   "plano": "Unimed"},
-            {"medico": "Dr. Carlos", "tipo": "Convênio",   "plano": "Hapvida"},
-            {"medico": "Dr. Ana",    "tipo": "Convênio",   "plano": "Unimed"},
-            {"medico": "Dr. Carlos", "tipo": "Convênio",   "plano": "Unimed"},
-            {"medico": "Dr. Carlos", "tipo": "Particular", "plano": ""},
-        ]
+        self.relatorio_controller = RelatorioContrroler()
+        self.todas_consultas = self.relatorio_controller.listar_relatorio()
+
+        self.filtro_atual = "Último mês"
+        self.data_inicio_personalizada = None
+        self.data_fim_personalizada = None
+
+        # Mantém referência às figuras matplotlib abertas, para fechar
+        # explicitamente antes de redesenhar — encerrar a figura antiga
+        # evita acumular memória cada vez que o relatório é atualizado
+        # (troca de filtro, troca de tema, etc).
+        self._figuras_abertas = []
+
+        # Mantém referência aos FigureCanvasTkAgg (não só às Figures),
+        # para poder desconectá-los do widget Tkinter de forma limpa
+        # antes da destruição — ver _fechar_figuras_abertas() para o
+        # porquê disso ser necessário.
+        self._canvases_abertos = []
+
+        # Preenchidos por _popular_relatorio() a cada render(); usados
+        # pelo botão "Exportar PDF" para montar o documento com os
+        # mesmos números e gráficos que estão na tela no momento do clique.
+        self._dados_relatorio_atual = None
+        self._fig_pizza = None
+        self._fig_barras = None
+        self._fig_linha = None
+
+        self._instalar_filtro_erro_matplotlib()
 
         self.render()
 
-    # ── render ──────────────────────────────────────────────────────────────
+    def _instalar_filtro_erro_matplotlib(self):
+        """O matplotlib agenda internamente, via after()/after_idle() do
+        Tkinter, callbacks de foco/redraw ligados ao FigureCanvasTkAgg.
+        Esses callbacks rodam no loop principal do Tkinter, fora do nosso
+        controle direto — se a tela for recriada (troca de tema, troca de
+        filtro) entre o agendamento e a execução, o callback dispara
+        contra um widget já destruído, gerando TclError "invalid command
+        name" que por padrão derruba a aplicação.
 
+        Isso é um problema conhecido da combinação matplotlib+Tkinter,
+        não um bug da nossa lógica de destruição (já cuidamos da ordem
+        certa em _fechar_figuras_abertas). A forma correta de neutralizar
+        é interceptar esse erro específico no tratador de exceções de
+        callback do Tkinter, deixando qualquer OUTRO erro real continuar
+        sendo reportado normalmente.
+        """
+        janela_raiz = self.winfo_toplevel()
+        tratador_original = janela_raiz.report_callback_exception
+
+        def _tratador_filtrado(exc_type, exc_value, exc_traceback):
+            if exc_type is TclError and "invalid command name" in str(exc_value):
+                # Callback fantasma do matplotlib contra widget já
+                # destruído — ignora silenciosamente, não é um erro real
+                # do nosso código.
+                return
+            tratador_original(exc_type, exc_value, exc_traceback)
+
+        janela_raiz.report_callback_exception = _tratador_filtrado
+
+    def destroy(self):
+        # Fecha qualquer figura matplotlib pendente quando a tela for
+        # destruída (troca de aba no menu), evitando acúmulo de memória
+        # entre uma visita e outra à tela de Relatórios.
+        self._fechar_figuras_abertas()
+        super().destroy()
+
+    def _fechar_figuras_abertas(self):
+        # Desconecta cada FigureCanvasTkAgg do Tkinter ANTES de fechar a
+        # Figure correspondente. Sem isso, o matplotlib pode deixar
+        # callbacks internos (foco, hover) agendados apontando para um
+        # widget que está sendo destruído "por fora" (ex: quando o
+        # render() chama winfo_children().destroy() no início de cada
+        # nova renderização) — o que gera "invalid command name" mais
+        # tarde, quando esse callback fantasma tenta rodar.
+        for canvas in self._canvases_abertos:
+            try:
+                canvas.get_tk_widget().destroy()
+            except Exception:
+                pass  # widget já pode ter sido destruído pelo Tkinter
+        self._canvases_abertos = []
+
+        for fig in self._figuras_abertas:
+            plt.close(fig)
+        self._figuras_abertas = []
+
+    # ──────────────────────────────────────────────────────────────────
+    # FILTRO DE PERÍODO
+    # ──────────────────────────────────────────────────────────────────
+    def _consultas_do_periodo(self):
+        """Filtra self.todas_consultas de acordo com self.filtro_atual,
+        comparando contra a data de cada consulta (string dd/mm/aaaa)."""
+        hoje = datetime.now()
+
+        if self.filtro_atual == "Hoje":
+            inicio = hoje.replace(hour=0, minute=0, second=0, microsecond=0)
+            fim = hoje
+        elif self.filtro_atual == "Última semana":
+            inicio = hoje - timedelta(days=7)
+            fim = hoje
+        elif self.filtro_atual == "Último mês":
+            inicio = hoje - timedelta(days=30)
+            fim = hoje
+        else:  # Personalizado
+            if not self.data_inicio_personalizada or not self.data_fim_personalizada:
+                return []
+            inicio = self.data_inicio_personalizada
+            fim = self.data_fim_personalizada
+
+        resultado = []
+        for c in self.todas_consultas:
+            data_c = datetime.strptime(c["data"], "%d/%m/%Y")
+            if inicio.date() <= data_c.date() <= fim.date():
+                resultado.append(c)
+        return resultado
+
+    def _selecionar_filtro(self, nome_filtro):
+        self.filtro_atual = nome_filtro
+        self.render()
+
+    def _aplicar_filtro_personalizado(self):
+        texto_inicio = self.input_data_inicio.get().strip()
+        texto_fim = self.input_data_fim.get().strip()
+        try:
+            self.data_inicio_personalizada = datetime.strptime(texto_inicio, "%d/%m/%Y")
+            self.data_fim_personalizada = datetime.strptime(texto_fim, "%d/%m/%Y")
+        except ValueError:
+            messagebox.showerror(
+                "Data inválida",
+                "Digite as duas datas no formato dd/mm/aaaa.",
+            )
+            return
+        self.filtro_atual = "Personalizado"
+        self.render()
+
+    # ──────────────────────────────────────────────────────────────────
+    # RENDER PRINCIPAL
+    # ──────────────────────────────────────────────────────────────────
     def render(self):
+        self._fechar_figuras_abertas()
         for w in self.winfo_children():
             w.destroy()
 
-        # Cabeçalho
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=32, pady=(28, 8))
-
-        title_frame = ctk.CTkFrame(header, fg_color="transparent")
-        title_frame.pack(side="left", fill="y")
-
-        # Eyebrow label acima do título
-        ctk.CTkLabel(
-            title_frame,
-            text="CLÍNICA MÉDICA  ·  GESTÃO",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            text_color="#4A7FD4",
-            fg_color="transparent",
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            title_frame,
-            text="Relatórios",
-            font=ctk.CTkFont(size=28, weight="bold"),
-            text_color=get_color("text"),
-        ).pack(anchor="w")
-
-        # Linha decorativa sob o título
-        accent_line = ctk.CTkFrame(self, height=2, fg_color="#2D5FA8", corner_radius=1)
-        accent_line.pack(fill="x", padx=32, pady=(0, 20))
-
-        # Área scrollável
-        self.area = ctk.CTkScrollableFrame(
+        titulo = ctk.CTkLabel(
             self,
-            fg_color="transparent",
-            scrollbar_button_color=get_color("border"),
-            scrollbar_button_hover_color=get_color("accent"),
+            text="📊 Relatórios",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=get_color("text"),
         )
-        self.area.pack(fill="both", expand=True, padx=24, pady=(0, 20))
+        titulo.pack(anchor="w", padx=30, pady=(20, 10))
 
-        self.update_data()
+        self._montar_filtro_periodo()
 
-    # ── dados ────────────────────────────────────────────────────────────────
+        self.area = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.area.pack(fill="both", expand=True, padx=20, pady=10)
 
-    def update_data(self):
-        dados = self.consultas
-        total      = len(dados)
-        convenio   = len([c for c in dados if c["tipo"] == "Convênio"])
-        particular = len([c for c in dados if c["tipo"] == "Particular"])
+        self._popular_relatorio()
 
-        medicos: dict = {}
-        planos:  dict = {}
+    def _montar_filtro_periodo(self):
+        linha = ctk.CTkFrame(self, fg_color="transparent")
+        linha.pack(fill="x", padx=30, pady=(0, 10))
+
+        for nome in FILTROS_PERIODO:
+            ativo = nome == self.filtro_atual
+            ctk.CTkButton(
+                linha, text=nome, height=34, corner_radius=10,
+                fg_color=get_color("accent") if ativo else get_color("surface_alt"),
+                hover_color=get_color("accent_hover"),
+                text_color="#FFFFFF" if ativo else get_color("text_secondary"),
+                font=ctk.CTkFont(size=13, weight="bold" if ativo else "normal"),
+                command=lambda n=nome: self._selecionar_filtro(n),
+            ).pack(side="left", padx=(0, 8))
+
+        if self.filtro_atual == "Personalizado":
+            self.input_data_inicio = ctk.CTkEntry(linha, placeholder_text="dd/mm/aaaa", width=110)
+            self.input_data_inicio.pack(side="left", padx=(8, 4))
+            if self.data_inicio_personalizada:
+                self.input_data_inicio.insert(0, self.data_inicio_personalizada.strftime("%d/%m/%Y"))
+
+            ctk.CTkLabel(linha, text="até", text_color=get_color("text_secondary")).pack(side="left", padx=4)
+
+            self.input_data_fim = ctk.CTkEntry(linha, placeholder_text="dd/mm/aaaa", width=110)
+            self.input_data_fim.pack(side="left", padx=4)
+            if self.data_fim_personalizada:
+                self.input_data_fim.insert(0, self.data_fim_personalizada.strftime("%d/%m/%Y"))
+
+            ctk.CTkButton(
+                linha, text="Aplicar", height=34, width=70, corner_radius=10,
+                fg_color=get_color("surface_alt"), text_color=get_color("accent"),
+                border_width=1, border_color=get_color("accent"),
+                command=self._aplicar_filtro_personalizado,
+            ).pack(side="left", padx=(8, 0))
+
+        ctk.CTkButton(
+            linha, text="📄 Exportar PDF", height=34, corner_radius=10,
+            fg_color=get_color("accent"), hover_color=get_color("accent_hover"),
+            font=ctk.CTkFont(size=13, weight="bold"),
+            command=self._exportar_pdf,
+        ).pack(side="right")
+
+    # ──────────────────────────────────────────────────────────────────
+    # PROCESSAMENTO DOS DADOS (tudo em memória, sobre a lista filtrada)
+    # ──────────────────────────────────────────────────────────────────
+    def _popular_relatorio(self):
+        dados = self._consultas_do_periodo()
+
+        # Limpa estado anterior — se o período não tiver dados, não deve
+        # sobrar referência de relatório antigo disponível pra exportar.
+        self._dados_relatorio_atual = None
+        self._fig_pizza = None
+        self._fig_barras = None
+        self._fig_linha = None
+
+        if not dados:
+            ctk.CTkLabel(
+                self.area, text="📭 Nenhuma consulta no período selecionado",
+                text_color=get_color("text_secondary"), font=ctk.CTkFont(size=14),
+            ).pack(pady=60)
+            return
+
+        total = len(dados)
+        # Comparações usam o valor BRUTO do banco ("plano"/"particular"),
+        # não os rótulos de exibição ("Convênio"/"Particular").
+        convenio = len([c for c in dados if c["tipo"] == TIPO_PLANO_BANCO])
+        particular = len([c for c in dados if c["tipo"] == TIPO_PARTICULAR_BANCO])
+
+        medicos = {}
+        planos = {}
+        por_dia = {}
 
         for c in dados:
-            plano  = c["plano"] if c["plano"] else "Particular"
+            # c["plano"] já vem com o NOME do plano (ex: "Unimed"),
+            # vindo do LEFT JOIN com a tabela Plano — None quando a
+            # consulta é particular (paciente sem plano cadastrado).
+            # Para exibição, agrupamos esses casos sob o rótulo "Particular".
+            plano = c["plano"] if c["plano"] else LABEL_PARTICULAR
             medico = c["medico"]
+
             planos[plano] = planos.get(plano, 0) + 1
-            medicos.setdefault(medico, {})
+
+            if medico not in medicos:
+                medicos[medico] = {}
             medicos[medico][plano] = medicos[medico].get(plano, 0) + 1
 
-        # ── cards de resumo ──────────────────────────────────────────────────
-        row = ctk.CTkFrame(self.area, fg_color="transparent")
-        row.pack(fill="x", pady=(4, 16))
-        row.columnconfigure((0, 1, 2), weight=1, uniform="col")
+            por_dia[c["data"]] = por_dia.get(c["data"], 0) + 1
 
-        cards_data = [
-            ("Total", str(total), "#1A3A6B", "#4A7FD4"),
-            ("Convênios", str(convenio), "#0F3D2E", "#1D9E75"),
-            ("Particular", str(particular), "#3D1A1A", "#D85A30"),
-        ]
+        # Guarda os números já processados para o botão "Exportar PDF"
+        # usar depois, sem precisar reprocessar nada.
+        self._dados_relatorio_atual = {
+            "total": total, "convenio": convenio, "particular": particular,
+            "medicos": medicos,
+        }
 
-        for i, (titulo, valor, bg, accent) in enumerate(cards_data):
-            self._summary_card(row, titulo, valor, col=i, bg=bg, accent=accent)
+        # ---- Cards -----------------------------------------------------------
+        cards = ctk.CTkFrame(self.area, fg_color="transparent")
+        cards.pack(fill="x", pady=(0, 15))
+        self._card(cards, "📋", "Total de consultas", total, get_color("accent"))
+        self._card(cards, "🏥", LABEL_CONVENIO, convenio, get_color("success"))
+        self._card(cards, "💳", LABEL_PARTICULAR, particular, get_color("warning"))
 
-        # ── gráfico ──────────────────────────────────────────────────────────
-        self._grafico(planos)
+        # ---- Gráficos lado a lado: pizza + barras -----------------------------
+        linha_graficos = ctk.CTkFrame(self.area, fg_color="transparent")
+        linha_graficos.pack(fill="x", pady=(0, 15))
 
-        # ── lista por médico ─────────────────────────────────────────────────
-        self._lista_medicos(medicos)
+        self._grafico_pizza(linha_graficos, convenio, particular)
+        self._grafico_barras_medico(linha_graficos, medicos)
 
-    # ── widgets ──────────────────────────────────────────────────────────────
+        # ---- Gráfico de linha: consultas por dia ------------------------------
+        self._grafico_linha_por_dia(self.area, por_dia)
 
-    def _summary_card(self, parent, titulo: str, valor: str, col: int,
-                      bg: str = None, accent: str = None):
-        bg_color     = bg     or get_color("surface")
-        accent_color = accent or get_color("accent")
+        # ---- Detalhamento por médico --------------------------------------------
+        self._lista_medicos(self.area, medicos)
 
+    def _card(self, parent, icone, titulo, valor, cor_destaque):
         card = ctk.CTkFrame(
-            parent,
-            fg_color=bg_color,
-            corner_radius=14,
-            border_width=1,
-            border_color=accent_color,
+            parent, fg_color=get_color("surface"), corner_radius=14,
+            border_width=1, border_color=get_color("border"),
         )
-        card.grid(row=0, column=col, padx=6, pady=0, sticky="nsew")
+        card.pack(side="left", expand=True, fill="x", padx=5)
 
-        # Barra de topo colorida
-        top_bar = ctk.CTkFrame(card, height=4, fg_color=accent_color, corner_radius=0)
-        top_bar.pack(fill="x")
-        top_bar.pack_propagate(False)
+        # Barra de destaque lateral (esquerda) — substitui o card neutro
+        # original por um indicador de cor por categoria.
+        barra = ctk.CTkFrame(card, width=4, fg_color=cor_destaque, corner_radius=0)
+        barra.pack(side="left", fill="y")
+
+        conteudo = ctk.CTkFrame(card, fg_color="transparent")
+        conteudo.pack(side="left", fill="both", expand=True, padx=14, pady=12)
 
         ctk.CTkLabel(
-            card,
-            text=titulo.upper(),
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=accent_color,
-            fg_color="transparent",
-        ).pack(pady=(14, 2))
+            conteudo, text=icone, font=ctk.CTkFont(size=18),
+        ).pack(anchor="w")
 
         ctk.CTkLabel(
-            card,
-            text=valor,
-            font=ctk.CTkFont(size=36, weight="bold"),
-            text_color="#FFFFFF",
-            fg_color="transparent",
-        ).pack(pady=(0, 16))
-
-    def _grafico(self, dados: dict):
-        # Wrapper com sombra simulada (frame maior levemente deslocado)
-        outer = ctk.CTkFrame(
-            self.area,
-            fg_color=get_color("border"),
-            corner_radius=14,
-        )
-        outer.pack(fill="x", pady=(0, 14), padx=1)
-
-        box = ctk.CTkFrame(
-            outer,
-            fg_color=get_color("surface"),
-            corner_radius=13,
-            border_width=0,
-        )
-        box.pack(fill="both", expand=True, padx=1, pady=1)
-
-        # Cabeçalho da seção
-        hdr = ctk.CTkFrame(box, fg_color="transparent")
-        hdr.pack(fill="x", padx=18, pady=(16, 0))
-
-        # Ícone simulado com quadradinho colorido
-        dot = ctk.CTkFrame(hdr, width=4, height=20, fg_color="#4A7FD4", corner_radius=2)
-        dot.pack(side="left", padx=(0, 10))
-        dot.pack_propagate(False)
+            conteudo, text=titulo, text_color=get_color("text_secondary"),
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", pady=(4, 0))
 
         ctk.CTkLabel(
-            hdr,
-            text="Distribuição por Plano",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            conteudo, text=str(valor), font=ctk.CTkFont(size=26, weight="bold"),
             text_color=get_color("text"),
-            fg_color="transparent",
-        ).pack(side="left")
+        ).pack(anchor="w")
 
-        ctk.CTkFrame(box, height=1, fg_color=get_color("border")).pack(
-            fill="x", padx=18, pady=(12, 0)
-        )
+    # ──────────────────────────────────────────────────────────────────
+    # GRÁFICOS (matplotlib embutido, cores vindas do tema)
+    # ──────────────────────────────────────────────────────────────────
+    def _criar_figura(self, figsize):
+        """Cria uma figura matplotlib já com as cores de fundo do tema
+        atual aplicadas, e a guarda em self._figuras_abertas para fechar
+        depois (evita acúmulo de memória entre re-renderizações)."""
+        cor_fundo = get_color("surface")
+        fig, ax = plt.subplots(figsize=figsize, dpi=100)
+        fig.patch.set_facecolor(cor_fundo)
+        ax.set_facecolor(cor_fundo)
+        self._figuras_abertas.append(fig)
+        return fig, ax
 
-        canvas = ctk.CTkCanvas(
-            box,
-            height=220,
-            bg=get_color("surface"),
-            highlightthickness=0,
-        )
-        canvas.pack(fill="x", padx=18, pady=(12, 18))
+    def _embutir_figura(self, parent, fig):
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        self._canvases_abertos.append(canvas)
+        widget = canvas.get_tk_widget()
+        widget.configure(bg=get_color("surface"), highlightthickness=0)
+        return widget
 
-        if not dados:
-            return
-
-        canvas.bind(
-            "<Configure>",
-            lambda e, d=dados, c=canvas: self._draw_bars(c, d, e.width),
-        )
-
-    def _draw_bars(self, canvas, dados: dict, canvas_width: int):
-        canvas.delete("all")
-        if not dados:
-            return
-
-        # Paleta de cores para as barras (uma cor por plano)
-        cores = ["#4A7FD4", "#1D9E75", "#D85A30", "#E8B84B", "#9B6FD4"]
-        text_color = get_color("text_secondary")
-        base_y     = 170
-        max_val    = max(dados.values())
-        n          = len(dados)
-        bar_w      = min(60, (canvas_width - 80) // max(n, 1) - 16)
-        gap        = (canvas_width - bar_w * n) // (n + 1)
-        x          = gap
-
-        # Linhas de grade horizontais
-        for frac in [0.25, 0.5, 0.75, 1.0]:
-            y = base_y - int(frac * 120)
-            canvas.create_line(
-                0, y, canvas_width, y,
-                fill=get_color("border"), width=1, dash=(4, 6),
-            )
-
-        for i, (nome, valor) in enumerate(dados.items()):
-            cor   = cores[i % len(cores)]
-            h     = int((valor / max_val) * 120)
-            top_y = base_y - h
-            r     = 6
-
-            # Sombra da barra (deslocada 2px)
-            shadow = self._hex_alpha(cor, 0.25)
-            canvas.create_rectangle(
-                x + 2, top_y + r + 2, x + bar_w + 2, base_y + 2,
-                fill=shadow, outline="",
-            )
-
-            # Barra principal com topo arredondado
-            canvas.create_rectangle(
-                x, top_y + r, x + bar_w, base_y,
-                fill=cor, outline="",
-            )
-            canvas.create_oval(
-                x, top_y, x + bar_w, top_y + r * 2,
-                fill=cor, outline="",
-            )
-
-            # Brilho sutil no topo da barra
-            highlight = self._hex_alpha("#FFFFFF", 0.15)
-            canvas.create_rectangle(
-                x + 2, top_y + r, x + bar_w // 2, top_y + r + h // 3,
-                fill=highlight, outline="",
-            )
-
-            # Valor acima da barra — com fundo pill
-            pill_x1 = x + bar_w / 2 - 14
-            pill_x2 = x + bar_w / 2 + 14
-            pill_y1 = top_y - 26
-            pill_y2 = top_y - 8
-            canvas.create_oval(pill_x1, pill_y1, pill_x1 + 8, pill_y2, fill=cor, outline="")
-            canvas.create_oval(pill_x2 - 8, pill_y1, pill_x2, pill_y2, fill=cor, outline="")
-            canvas.create_rectangle(pill_x1 + 4, pill_y1, pill_x2 - 4, pill_y2, fill=cor, outline="")
-            canvas.create_text(
-                x + bar_w / 2, top_y - 17,
-                text=str(valor),
-                fill="#FFFFFF",
-                font=("", 10, "bold"),
-            )
-
-            # Label abaixo com cor do plano
-            canvas.create_text(
-                x + bar_w / 2, base_y + 18,
-                text=nome,
-                fill=get_color("text"),
-                font=("", 11),
-            )
-
-            # Indicador de cor (pequeno quadrado abaixo do label)
-            sq = 8
-            sx = x + bar_w / 2 - sq / 2
-            canvas.create_rectangle(
-                sx, base_y + 32, sx + sq, base_y + 32 + sq,
-                fill=cor, outline="",
-            )
-
-            x += bar_w + gap
-
-        # Linha de base
-        canvas.create_line(
-            0, base_y, canvas_width, base_y,
-            fill=get_color("border"), width=1,
-        )
-
-    @staticmethod
-    def _hex_alpha(hex_color: str, alpha: float) -> str:
-        """Retorna cor com transparência simulada misturando com preto."""
-        hex_color = hex_color.lstrip("#")
-        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-        r = int(r * alpha)
-        g = int(g * alpha)
-        b = int(b * alpha)
-        return f"#{r:02x}{g:02x}{b:02x}"
-
-    def _lista_medicos(self, dados: dict):
-        outer = ctk.CTkFrame(
-            self.area,
-            fg_color=get_color("border"),
-            corner_radius=14,
-        )
-        outer.pack(fill="x", pady=(0, 14), padx=1)
-
+    def _grafico_pizza(self, parent, convenio, particular):
         box = ctk.CTkFrame(
-            outer,
-            fg_color=get_color("surface"),
-            corner_radius=13,
+            parent, fg_color=get_color("surface"), corner_radius=14,
+            border_width=1, border_color=get_color("border"),
         )
-        box.pack(fill="both", expand=True, padx=1, pady=1)
-
-        # Cabeçalho da seção
-        hdr = ctk.CTkFrame(box, fg_color="transparent")
-        hdr.pack(fill="x", padx=18, pady=(16, 0))
-
-        dot = ctk.CTkFrame(hdr, width=4, height=20, fg_color="#1D9E75", corner_radius=2)
-        dot.pack(side="left", padx=(0, 10))
-        dot.pack_propagate(False)
+        box.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
         ctk.CTkLabel(
-            hdr,
-            text="Atendimentos por Médico",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            text_color=get_color("text"),
-            fg_color="transparent",
-        ).pack(side="left")
+            box, text=f"{LABEL_CONVENIO} vs {LABEL_PARTICULAR}", font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=get_color("accent"),
+        ).pack(anchor="w", padx=14, pady=(12, 4))
 
-        ctk.CTkFrame(box, height=1, fg_color=get_color("border")).pack(
-            fill="x", padx=18, pady=(12, 12)
+        cor_texto = get_color("text")
+        fig, ax = self._criar_figura(figsize=(3.4, 2.8))
+
+        valores = [convenio, particular]
+        labels = [f"{LABEL_CONVENIO}\n{convenio}", f"{LABEL_PARTICULAR}\n{particular}"]
+        cores = [get_color("success"), get_color("warning")]
+
+        if sum(valores) > 0:
+            ax.pie(
+                valores, labels=labels, colors=cores, autopct="%1.0f%%",
+                textprops={"color": cor_texto, "fontsize": 9},
+                wedgeprops={"linewidth": 0},
+            )
+        ax.set_aspect("equal")
+
+        self._fig_pizza = fig
+
+        widget = self._embutir_figura(box, fig)
+        widget.pack(padx=10, pady=(0, 12))
+
+    def _grafico_barras_medico(self, parent, medicos):
+        box = ctk.CTkFrame(
+            parent, fg_color=get_color("surface"), corner_radius=14,
+            border_width=1, border_color=get_color("border"),
         )
+        box.pack(side="left", fill="both", expand=True, padx=(8, 0))
 
-        # Cores dos badges por índice de médico
-        badge_cores = [
-            ("#1A3A6B", "#4A7FD4"),  # azul
-            ("#0F3D2E", "#1D9E75"),  # verde
-            ("#3D1A1A", "#D85A30"),  # coral
-        ]
+        ctk.CTkLabel(
+            box, text="Consultas por médico", font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=get_color("accent"),
+        ).pack(anchor="w", padx=14, pady=(12, 4))
 
-        for i, (medico, planos) in enumerate(dados.items()):
-            bg_badge, fg_badge = badge_cores[i % len(badge_cores)]
+        nomes = list(medicos.keys())
+        totais = [sum(planos.values()) for planos in medicos.values()]
 
-            sub = ctk.CTkFrame(
-                box,
-                fg_color=get_color("surface_alt"),
-                corner_radius=10,
-                border_width=1,
-                border_color=get_color("border"),
-            )
-            sub.pack(fill="x", padx=14, pady=(0, 10))
+        cor_texto = get_color("text")
+        cor_grade = get_color("border")
+        fig, ax = self._criar_figura(figsize=(4.4, 2.8))
 
-            # Cabeçalho do card de médico com avatar
-            med_hdr = ctk.CTkFrame(sub, fg_color="transparent")
-            med_hdr.pack(fill="x", padx=14, pady=(12, 8))
+        ax.barh(nomes, totais, color=get_color("accent"))
+        ax.set_xlabel("")
+        ax.tick_params(colors=cor_texto, labelsize=9)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.spines["bottom"].set_visible(True)
+        ax.spines["bottom"].set_color(cor_grade)
+        ax.invert_yaxis()  # primeiro médico no topo
 
-            # Avatar circular com iniciais
-            inicial = medico.replace("Dr. ", "").replace("Dra. ", "")[0].upper()
-            avatar = ctk.CTkFrame(
-                med_hdr,
-                width=32, height=32,
-                fg_color=fg_badge,
-                corner_radius=16,
-            )
-            avatar.pack(side="left", padx=(0, 10))
-            avatar.pack_propagate(False)
-            ctk.CTkLabel(
-                avatar,
-                text=inicial,
-                font=ctk.CTkFont(size=13, weight="bold"),
-                text_color="#FFFFFF",
-                fg_color="transparent",
-            ).place(relx=0.5, rely=0.5, anchor="center")
+        for i, v in enumerate(totais):
+            ax.text(v + max(totais) * 0.02, i, str(v), color=cor_texto, fontsize=9, va="center")
+
+        fig.tight_layout()
+        self._fig_barras = fig
+
+        widget = self._embutir_figura(box, fig)
+        widget.pack(padx=10, pady=(0, 12), fill="both", expand=True)
+
+    def _grafico_linha_por_dia(self, parent, por_dia):
+        box = ctk.CTkFrame(
+            parent, fg_color=get_color("surface"), corner_radius=14,
+            border_width=1, border_color=get_color("border"),
+        )
+        box.pack(fill="x", pady=(0, 15))
+
+        ctk.CTkLabel(
+            box, text="Consultas por dia (no período)", font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=get_color("accent"),
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+
+        # Ordena por data real (não pela string dd/mm/aaaa, que ordenaria
+        # alfabeticamente errado) antes de plotar.
+        dias_ordenados = sorted(por_dia.keys(), key=lambda d: datetime.strptime(d, "%d/%m/%Y"))
+        valores = [por_dia[d] for d in dias_ordenados]
+
+        # Eixo X mostra só dia/mês (sem ano) para não poluir quando o
+        # período tem muitos dias.
+        labels_x = [datetime.strptime(d, "%d/%m/%Y").strftime("%d/%m") for d in dias_ordenados]
+
+        cor_texto = get_color("text")
+        cor_grade = get_color("border")
+        fig, ax = self._criar_figura(figsize=(8.4, 2.6))
+
+        ax.plot(labels_x, valores, color=get_color("accent"), linewidth=2)
+        ax.fill_between(range(len(valores)), valores, color=get_color("accent"), alpha=0.15)
+        ax.tick_params(colors=cor_texto, labelsize=8)
+        ax.grid(axis="y", color=cor_grade, linewidth=0.5, alpha=0.5)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        # Evita poluir o eixo X com um rótulo por dia quando o período é
+        # longo (ex: último mês = 30+ pontos) — mostra só uma amostra.
+        passo = max(1, len(labels_x) // 10)
+        ax.set_xticks(range(0, len(labels_x), passo))
+        ax.set_xticklabels(labels_x[::passo], rotation=0)
+
+        fig.tight_layout()
+        self._fig_linha = fig
+
+        widget = self._embutir_figura(box, fig)
+        widget.pack(padx=10, pady=(0, 12), fill="both", expand=True)
+
+    # ──────────────────────────────────────────────────────────────────
+    # DETALHAMENTO POR MÉDICO (lista, igual ao original)
+    # ──────────────────────────────────────────────────────────────────
+    def _lista_medicos(self, parent, dados):
+        box = ctk.CTkFrame(
+            parent, fg_color=get_color("surface"), corner_radius=14,
+            border_width=1, border_color=get_color("border"),
+        )
+        box.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(
+            box, text="Detalhamento por médico", font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=get_color("accent"),
+        ).pack(anchor="w", padx=14, pady=(12, 8))
+
+        for medico, planos in dados.items():
+            sub = ctk.CTkFrame(box, fg_color=get_color("surface_alt"), corner_radius=10)
+            sub.pack(fill="x", padx=14, pady=(0, 8))
 
             ctk.CTkLabel(
-                med_hdr,
-                text=medico,
-                font=ctk.CTkFont(size=13, weight="bold"),
+                sub, text=medico, font=ctk.CTkFont(weight="bold", size=13),
                 text_color=get_color("text"),
-                fg_color="transparent",
-            ).pack(side="left")
+            ).pack(anchor="w", padx=12, pady=(8, 4))
 
-            # Total de atendimentos do médico (badge à direita)
-            total_med = sum(planos.values())
-            total_badge = ctk.CTkFrame(
-                med_hdr,
-                fg_color=bg_badge,
-                corner_radius=10,
-                width=60, height=22,
-            )
-            total_badge.pack(side="right")
-            total_badge.pack_propagate(False)
-            ctk.CTkLabel(
-                total_badge,
-                text=f"{total_med} atend.",
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color=fg_badge,
-                fg_color="transparent",
-            ).place(relx=0.5, rely=0.5, anchor="center")
-
-            # Separador interno
-            ctk.CTkFrame(sub, height=1, fg_color=get_color("border")).pack(
-                fill="x", padx=14, pady=(0, 8)
-            )
-
-            # Linhas de plano com barra de progresso
-            total_med = sum(planos.values()) or 1
             for plano, qtd in planos.items():
                 linha = ctk.CTkFrame(sub, fg_color="transparent")
-                linha.pack(fill="x", padx=14, pady=(0, 8))
+                linha.pack(fill="x", padx=12, pady=2)
 
-                # Nome do plano
                 ctk.CTkLabel(
-                    linha,
-                    text=plano,
+                    linha, text=plano, text_color=get_color("text_secondary"),
                     font=ctk.CTkFont(size=12),
-                    text_color=get_color("text_secondary"),
-                    fg_color="transparent",
-                    width=80,
-                    anchor="w",
                 ).pack(side="left")
 
-                # Barra de progresso
-                prog_outer = ctk.CTkFrame(
-                    linha,
-                    height=6,
-                    fg_color=get_color("border"),
-                    corner_radius=3,
-                )
-                prog_outer.pack(side="left", fill="x", expand=True, padx=(8, 10))
-                prog_outer.pack_propagate(False)
-
-                pct = qtd / total_med
-                if pct > 0:
-                    prog_inner = ctk.CTkFrame(
-                        prog_outer,
-                        height=6,
-                        fg_color=fg_badge,
-                        corner_radius=3,
-                    )
-                    prog_inner.place(relx=0, rely=0, relwidth=pct, relheight=1)
-
-                # Badge de quantidade
-                badge = ctk.CTkFrame(
-                    linha,
-                    fg_color=bg_badge,
-                    corner_radius=8,
-                    width=28,
-                    height=22,
-                )
-                badge.pack(side="right")
-                badge.pack_propagate(False)
-
                 ctk.CTkLabel(
-                    badge,
-                    text=str(qtd),
-                    font=ctk.CTkFont(size=11, weight="bold"),
-                    text_color=fg_badge,
-                    fg_color="transparent",
-                ).place(relx=0.5, rely=0.5, anchor="center")
+                    linha, text=str(qtd), text_color=get_color("accent"),
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                ).pack(side="right")
 
-            ctk.CTkFrame(sub, height=4, fg_color="transparent").pack()
+            ctk.CTkFrame(sub, fg_color="transparent", height=4).pack()
 
-        ctk.CTkFrame(box, height=10, fg_color="transparent").pack()
+    # ──────────────────────────────────────────────────────────────────
+    # EXPORTAR PDF
+    # ──────────────────────────────────────────────────────────────────
+    def _exportar_pdf(self):
+        if not self._dados_relatorio_atual:
+            messagebox.showwarning(
+                "Nada para exportar",
+                "Não há consultas no período selecionado para gerar o relatório.",
+            )
+            return
+
+        destino = filedialog.asksaveasfilename(
+            title="Salvar relatório como PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile=f"relatorio_{self.filtro_atual.lower().replace(' ', '_')}.pdf",
+        )
+        if not destino:
+            return
+
+        # Monta o texto do período exibido no cabeçalho do PDF. Para o
+        # filtro "Personalizado", inclui as datas escolhidas.
+        if self.filtro_atual == "Personalizado" and self.data_inicio_personalizada and self.data_fim_personalizada:
+            periodo_label = (
+                f"Personalizado "
+                f"({self.data_inicio_personalizada.strftime('%d/%m/%Y')} a "
+                f"{self.data_fim_personalizada.strftime('%d/%m/%Y')})"
+            )
+        else:
+            periodo_label = self.filtro_atual
+
+        dados = self._dados_relatorio_atual
+        try:
+            exportar_relatorio_pdf(
+                caminho_saida=destino,
+                periodo_label=periodo_label,
+                total=dados["total"],
+                convenio=dados["convenio"],
+                particular=dados["particular"],
+                medicos=dados["medicos"],
+                fig_pizza=self._fig_pizza,
+                fig_barras=self._fig_barras,
+                fig_linha=self._fig_linha,
+            )
+            messagebox.showinfo("Exportado", "Relatório em PDF gerado com sucesso.")
+        except Exception as e:
+            messagebox.showerror("Erro ao exportar", str(e))
